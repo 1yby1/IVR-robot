@@ -1,0 +1,136 @@
+// =========================================================================
+//  Element Plus 主题覆盖 —— 用运行时 CSS 变量方案，不需要改 SCSS 变量
+//  所有 Element Plus 组件默认色（el-button primary / el-menu 激活 / el-tag 等）
+//  将切换到我们的 teal + slate 体系，彻底告别默认蓝 #409eff
+// =========================================================================
+
+:root {
+  // ---- Primary (teal 700) ----
+  --el-color-primary: #0f766e;
+  --el-color-primary-light-3: #3e938d;
+  --el-color-primary-light-5: #67ada8;
+  --el-color-primary-light-7: #9fc8c4;
+  --el-color-primary-light-8: #c3dbd9;
+  --el-color-primary-light-9: #e4efed;
+  --el-color-primary-dark-2:  #0a4d47;
+
+  // ---- Semantic ----
+  --el-color-success: #16a34a;
+  --el-color-warning: #d97706;
+  --el-color-danger:  #dc2626;
+  --el-color-error:   #dc2626;
+  --el-color-info:    #6b7280;
+
+  --el-color-success-light-9: #e7f5ec;
+  --el-color-warning-light-9: #fdf1e3;
+  --el-color-danger-light-9:  #fbe4e4;
+  --el-color-info-light-9:    #f3f4f6;
+
+  // ---- Text ----
+  --el-text-color-primary:     #111827;
+  --el-text-color-regular:     #374151;
+  --el-text-color-secondary:   #6b7280;
+  --el-text-color-placeholder: #9ca3af;
+  --el-text-color-disabled:    #9ca3af;
+
+  // ---- Border ----
+  --el-border-color:         #e5e7eb;
+  --el-border-color-light:   #f3f4f6;
+  --el-border-color-lighter: #f3f4f6;
+  --el-border-color-hover:   #d1d5db;
+  --el-border-color-darker:  #d1d5db;
+
+  // ---- Fill / Background ----
+  --el-fill-color-blank:  #ffffff;
+  --el-fill-color:        #f8f9fa;
+  --el-fill-color-light:  #f3f4f6;
+  --el-fill-color-lighter:#f8f9fa;
+  --el-bg-color:          #ffffff;
+  --el-bg-color-page:     #f8f9fa;
+
+  // ---- Border Radius ----
+  --el-border-radius-base:  6px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 8px;
+
+  // ---- Shadow（对齐 token）----
+  --el-box-shadow:       0 1px 3px rgba(0, 0, 0, 0.08);
+  --el-box-shadow-light: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+// ---------- 细节调整 ----------
+
+// Menu 激活项用 primary 背景浅色 + 左侧强调条，而不是 Element 默认那种整行蓝高亮
+.el-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: rgba(15, 118, 110, 0.06);
+  --el-menu-active-color: var(--color-primary);
+  border-right: none;
+
+  .el-menu-item.is-active {
+    background: rgba(15, 118, 110, 0.08);
+    position: relative;
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 8px; bottom: 8px;
+      width: 3px;
+      background: var(--color-primary);
+      border-radius: 0 2px 2px 0;
+    }
+  }
+}
+
+// 主按钮用 teal solid，不要渐变
+.el-button--primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  &:hover, &:focus {
+    background-color: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+  &:active {
+    background-color: var(--color-primary-active);
+    border-color: var(--color-primary-active);
+  }
+}
+
+// Input focus 用边框变色 + outline，不用 glow
+.el-input__wrapper {
+  box-shadow: 0 0 0 1px var(--color-border-input) inset !important;
+  transition: box-shadow var(--tr-fast);
+  &:hover {
+    box-shadow: 0 0 0 1px var(--color-neutral-400) inset !important;
+  }
+  &.is-focus {
+    box-shadow: 0 0 0 1px var(--color-primary) inset !important;
+  }
+}
+
+// Tag/Badge 圆角统一为 4px
+.el-tag {
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-medium);
+}
+
+// Table 头部低调些
+.el-table th.el-table__cell {
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-700);
+  font-weight: var(--weight-semibold);
+}
+
+// Dropdown / Popover 阴影对齐 L2
+.el-popper.is-light {
+  box-shadow: var(--shadow-2) !important;
+}
+
+// 卡片默认用 border，不要同时有 shadow
+.el-card {
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+  border-radius: var(--radius-lg);
+  &.is-hover-shadow:hover {
+    box-shadow: var(--shadow-1);
+  }
+}

@@ -1,0 +1,40 @@
+# 编辑器
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# 依赖
+.claude/
+node_modules/
+dist/
+dist-ssr/
+target/
+*.class
+*.jar
+!mvnw.jar
+.mvn/
+*.log
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 构建缓存
+.vite/
+.parcel-cache/
+
+# 临时文件
+unpacked/
+*.docx#
+~$*.docx
+
+# 密钥
+secrets/
+*.pem
+*.key

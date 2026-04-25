@@ -1,0 +1,89 @@
+// =========================================================================
+//  Design Tokens - IVR 智能语音机器人
+//  约束来源：ivr-web/CLAUDE.md
+//  原则：克制的企业级视觉，避免 AI 生成式审美
+// =========================================================================
+
+:root {
+  // -------- Color · Brand --------
+  --color-primary: #0f766e;           // Teal 700（强调 / 主按钮 / focus）
+  --color-primary-hover: #0d5f58;     // darken 10%
+  --color-primary-active: #0a4d47;
+
+  --color-secondary: #0f172a;         // Slate 900（Logo / 侧栏 / 标题）
+  --color-secondary-hover: #1e293b;
+
+  // -------- Color · Neutral --------
+  --color-neutral-0:  #ffffff;
+  --color-neutral-50: #f8f9fa;
+  --color-neutral-100:#f3f4f6;
+  --color-neutral-200:#e5e7eb;        // 卡片/分隔线
+  --color-neutral-300:#d1d5db;        // 输入框边
+  --color-neutral-400:#9ca3af;        // 文字三级 / placeholder
+  --color-neutral-500:#6b7280;        // 文字次级
+  --color-neutral-700:#374151;
+  --color-neutral-900:#111827;        // 文字主
+
+  // -------- Color · Semantic --------
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error:   #dc2626;
+  --color-info:    #0f766e;           // 沿用 primary，避免引入第四色
+
+  // -------- Color · Alias --------
+  --color-bg:        var(--color-neutral-0);
+  --color-bg-muted:  var(--color-neutral-50);
+  --color-bg-sunken: var(--color-neutral-100);
+  --color-text:      var(--color-neutral-900);
+  --color-text-muted:var(--color-neutral-500);
+  --color-text-subtle:var(--color-neutral-400);
+  --color-border:    var(--color-neutral-200);
+  --color-border-input: var(--color-neutral-300);
+
+  // -------- Typography --------
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+               'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  --font-mono: 'SF Mono', Monaco, Consolas, 'Liberation Mono', monospace;
+
+  --text-xs:  12px;
+  --text-sm:  14px;
+  --text-base:16px;
+  --text-lg:  20px;
+  --text-xl:  24px;
+  --text-2xl: 32px;
+
+  --leading-tight: 1.25;
+  --leading-normal:1.5;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+
+  // -------- Spacing (4px grid) --------
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  // -------- Radius --------
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  // -------- Shadow（仅 2 级） --------
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.10);
+
+  // -------- Layout --------
+  --sidebar-width: 220px;
+  --topbar-height: 56px;
+  --topbar-height-sm: 48px;
+
+  // -------- Transition --------
+  --tr-fast: 120ms ease;
+  --tr-base: 200ms ease;
+}

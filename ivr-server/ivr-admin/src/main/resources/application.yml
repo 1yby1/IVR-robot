@@ -1,0 +1,82 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: ivr-admin
+  profiles:
+    active: dev
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/ivr?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USER:ivr}
+    password: ${MYSQL_PASSWORD:ivr123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 0
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  # Spring AI - 通义千问（OpenAI 兼容模式）
+  ai:
+    openai:
+      api-key: ${DASHSCOPE_API_KEY:sk-placeholder}
+      base-url: ${LLM_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+      chat:
+        options:
+          model: ${LLM_MODEL:qwen-plus}
+          temperature: 0.3
+      embedding:
+        options:
+          model: ${EMBED_MODEL:text-embedding-v2}
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+ivr:
+  jwt:
+    secret: ${JWT_SECRET:ivr-secret-change-me-in-production-at-least-32-chars}
+    expire: 86400  # 秒，24h
+    header: Authorization
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost
+  freeswitch:
+    esl-host: ${FS_HOST:localhost}
+    esl-port: ${FS_PORT:8021}
+    esl-password: ${FS_PASSWORD:ClueCon}
+
+logging:
+  level:
+    root: INFO
+    com.ivr: DEBUG

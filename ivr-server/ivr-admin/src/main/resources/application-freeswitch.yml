@@ -1,0 +1,16 @@
+link:
+  thingscloud:
+    freeswitch:
+      esl:
+        inbound:
+          default-password: ${FS_PASSWORD:ClueCon}
+          events:
+            - CHANNEL_CREATE
+            - CHANNEL_ANSWER
+            - CHANNEL_HANGUP
+            - DTMF
+          servers:
+            - host: ${FS_HOST:localhost}
+              port: ${FS_PORT:8021}
+              password: ${FS_PASSWORD:ClueCon}
+              timeout-seconds: ${FS_TIMEOUT_SECONDS:5}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default Dialplan：IVR 入口路由
+  - 被叫号码 4001-4099 → socket outbound 到 ivr-call（Sprint 2 启用）
+  - 当前占位：直接播放欢迎音测试 FreeSWITCH 可用
+-->
+<include>
+  <context name="default">
+
+    <!-- 测试扩展：1000 → 播放问候音 -->
+    <extension name="ivr_test">
+      <condition field="destination_number" expression="^(1000)$">
+        <action application="answer"/>
+        <action application="sleep" data="500"/>
+        <action application="playback" data="ivr/ivr-welcome.wav"/>
+        <action application="sleep" data="1000"/>
+        <action application="hangup"/>
+      </condition>
+    </extension>
+
+    <!-- IVR 热线：4001-4099 转到后端 Socket Outbound 接管（Sprint 2 启用） -->
+    <extension name="ivr_hotline">
+      <condition field="destination_number" expression="^(40\d{2})$">
+        <action application="answer"/>
+        <action application="set" data="hangup_after_bridge=true"/>
+        <!-- Sprint 2 将启用：<action application="socket" data="ivr-admin:8084 async full"/> -->
+        <action application="playback" data="ivr/ivr-thank-you-for-calling.wav"/>
+        <action application="hangup"/>
+      </condition>
+    </extension>
+
+  </context>
+</include>
