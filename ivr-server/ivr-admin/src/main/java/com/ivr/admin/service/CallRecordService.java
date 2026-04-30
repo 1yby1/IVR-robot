@@ -135,6 +135,21 @@ public class CallRecordService {
         if (log == null) {
             throw new BusinessException(404, "通话记录不存在");
         }
+        applyFinish(log, endReason, transferTo);
+    }
+
+    /** finishCall 的非异常版本：通话记录不存在时返回 false 而不是抛 404；用于 ESL 异常事件回调。 */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean tryFinishCall(String callUuid, String endReason, String transferTo) {
+        CallLog log = findByCallUuid(callUuid);
+        if (log == null) {
+            return false;
+        }
+        applyFinish(log, endReason, transferTo);
+        return true;
+    }
+
+    private void applyFinish(CallLog log, String endReason, String transferTo) {
         if (log.getEndTime() != null) {
             return;
         }

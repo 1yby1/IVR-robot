@@ -9,8 +9,21 @@ link:
             - CHANNEL_ANSWER
             - CHANNEL_HANGUP
             - DTMF
+            - RECORD_STOP
           servers:
             - host: ${FS_HOST:localhost}
               port: ${FS_PORT:8021}
               password: ${FS_PASSWORD:ClueCon}
               timeout-seconds: ${FS_TIMEOUT_SECONDS:5}
+
+ivr:
+  freeswitch:
+    enabled: true
+    address: ${FS_HOST:localhost}
+    recording-dir: ${FS_RECORDING_DIR:/tmp/ivr/recordings}
+    max-recording-bytes: ${FS_MAX_RECORDING_BYTES:33554432}
+    default-voice: ${FS_DEFAULT_VOICE:zh|tts_commandline}
+    asr-executor:
+      core-pool-size: 4
+      max-pool-size: 16
+      queue-capacity: 128
