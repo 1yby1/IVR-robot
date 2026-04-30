@@ -64,11 +64,6 @@ cd ivr-admin
 java -jar target\ivr-admin-exec.jar
 ```
 
-若 8080 已被占用，可以临时换端口：
-
-```powershell
-java -jar target\ivr-admin-exec.jar --server.port=8081
-```
 
 ### 4. 启动前端
 ```bash
@@ -85,3 +80,4 @@ pnpm dev
 ## 文档
 - 架构方案：`C:\Users\yby\.claude\plans\vectorized-squishing-melody.md`
 - 需求文档：`IVR机器人项目需求.docx`
+- RAG 操作指南：`docs/rag-quickstart.md`
