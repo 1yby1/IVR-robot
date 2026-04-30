@@ -18,7 +18,8 @@ import java.util.Map;
         EventNames.CHANNEL_CREATE,
         EventNames.CHANNEL_ANSWER,
         EventNames.CHANNEL_HANGUP,
-        EventNames.DTMF
+        EventNames.DTMF,
+        EventNames.RECORD_STOP
 })
 public class FreeSwitchEslEventHandler implements EslEventHandler {
 
@@ -49,6 +50,7 @@ public class FreeSwitchEslEventHandler implements EslEventHandler {
             case EventNames.CHANNEL_ANSWER -> callHandler.onChannelAnswer(uuid);
             case EventNames.DTMF -> callHandler.onDtmf(uuid, dtmfDigit(event));
             case EventNames.CHANNEL_HANGUP -> callHandler.onChannelHangup(uuid, hangupCause(event));
+            case EventNames.RECORD_STOP -> callHandler.onRecordStop(uuid, recordFile(event));
             default -> log.debug("[FreeSWITCH] ignore event address={} event={} uuid={}", address, eventName, uuid);
         }
     }
@@ -84,6 +86,16 @@ public class FreeSwitchEslEventHandler implements EslEventHandler {
                 header(event, "Hangup-Cause"),
                 VariableUtil.getVar(event, "hangup_cause"),
                 header(event, "variable_hangup_cause")
+        );
+    }
+
+    private String recordFile(EslEvent event) {
+        return firstText(
+                header(event, "Record-File-Path"),
+                VariableUtil.getVar(event, "record_file_path"),
+                VariableUtil.getVar(event, "recording_file"),
+                header(event, "variable_record_file_path"),
+                header(event, "variable_recording_file")
         );
     }
 

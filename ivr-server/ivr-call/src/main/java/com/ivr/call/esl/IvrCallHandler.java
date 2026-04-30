@@ -34,4 +34,9 @@ public class IvrCallHandler {
         log.info("[Call] hangup uuid={} cause={}", uuid, hangupCause);
         gatewayCallService.onHangup(uuid, hangupCause);
     }
+
+    public void onRecordStop(String uuid, String recordFile) {
+        log.info("[Call] record_stop uuid={} file={}", uuid, recordFile);
+        gatewayCallService.onRecordStop(uuid, recordFile);
+    }
 }
