@@ -35,6 +35,11 @@
         <jjwt.version>0.12.5</jjwt.version>
         <freeswitch-esl.version>2.2.0</freeswitch-esl.version>
         <fastjson2.version>2.0.50</fastjson2.version>
+        <!-- 覆盖 Spring Boot 3.3.0 默认的 1.18.32：JDK 24 需要 1.18.38+ -->
+        <lombok.version>1.18.38</lombok.version>
+        <!-- 覆盖 Spring Boot 3.3.0 默认的 5.11.0：JDK 24 上 inline-mock 需要 5.14+ -->
+        <mockito.version>5.14.2</mockito.version>
+        <byte-buddy.version>1.15.10</byte-buddy.version>
     </properties>
 
     <dependencyManagement>
@@ -134,6 +139,18 @@
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
