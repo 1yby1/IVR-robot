@@ -122,6 +122,111 @@
               />
             </el-form-item>
           </template>
+          <template v-if="selectedBizType === 'asr'">
+            <el-form-item label="最大录音时长（秒）">
+              <el-input-number
+                v-model="selectedNode.properties.maxSeconds"
+                :min="1" :max="60"
+                style="width: 100%"
+                @change="syncSelectedNode"
+              />
+            </el-form-item>
+            <el-form-item label="识别语种">
+              <el-select
+                v-model="selectedNode.properties.language"
+                style="width: 100%"
+                @change="syncSelectedNode"
+              >
+                <el-option label="中文（普通话）" value="zh-CN" />
+                <el-option label="英文" value="en-US" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="录音前提示语">
+              <el-input
+                v-model="selectedNode.properties.prompt"
+                type="textarea"
+                :rows="2"
+                placeholder="例如：请说出您的问题"
+                @input="syncSelectedNode"
+              />
+            </el-form-item>
+          </template>
+          <template v-if="selectedBizType === 'intent'">
+            <el-form-item label="输入变量">
+              <el-input
+                v-model="selectedNode.properties.inputVar"
+                placeholder="lastAsr / lastDtmf / 自定义变量名"
+                @input="syncSelectedNode"
+              />
+            </el-form-item>
+            <el-form-item label="候选意图">
+              <el-select
+                v-model="selectedNode.properties.intents"
+                multiple filterable allow-create
+                :reserve-keyword="false"
+                placeholder="输入意图标签后回车"
+                style="width: 100%"
+                @change="syncSelectedNode"
+              >
+                <el-option
+                  v-for="tag in selectedNode.properties.intents || []"
+                  :key="tag"
+                  :label="tag"
+                  :value="tag"
+                />
+              </el-select>
+              <div class="form-tip">每个意图对应一条出边，把出边的"分支按键"填成对应意图标签。</div>
+            </el-form-item>
+            <el-form-item label="未命中分支">
+              <el-input
+                v-model="selectedNode.properties.fallbackBranch"
+                placeholder="例如：other"
+                @input="syncSelectedNode"
+              />
+            </el-form-item>
+          </template>
+          <template v-if="selectedBizType === 'rag'">
+            <el-form-item label="知识库 ID">
+              <el-input-number
+                v-model="selectedNode.properties.kbId"
+                :min="0"
+                controls-position="right"
+                style="width: 100%"
+                @change="syncSelectedNode"
+              />
+              <div class="form-tip">留空走默认全局知识库。</div>
+            </el-form-item>
+            <el-form-item label="检索片段数 (topK)">
+              <el-input-number
+                v-model="selectedNode.properties.topK"
+                :min="1" :max="10"
+                style="width: 100%"
+                @change="syncSelectedNode"
+              />
+            </el-form-item>
+            <el-form-item label="问题变量">
+              <el-input
+                v-model="selectedNode.properties.questionVar"
+                placeholder="lastAsr"
+                @input="syncSelectedNode"
+              />
+            </el-form-item>
+            <el-form-item label="答案变量">
+              <el-input
+                v-model="selectedNode.properties.answerVar"
+                placeholder="ragAnswer"
+                @input="syncSelectedNode"
+              />
+              <div class="form-tip">答案写入此变量，后续 play 节点可用 <code>{{ '${' + (selectedNode.properties.answerVar || 'ragAnswer') + '}' }}</code> 引用。</div>
+            </el-form-item>
+            <el-form-item label="未命中分支">
+              <el-input
+                v-model="selectedNode.properties.fallbackBranch"
+                placeholder="例如：fallback"
+                @input="syncSelectedNode"
+              />
+            </el-form-item>
+          </template>
         </el-form>
         <el-form v-else label-position="top" size="small">
           <el-form-item label="连线 ID">
@@ -426,6 +531,22 @@ function defaultNodeProperties(item: NodeItem) {
     base.timeoutSec = 8
   }
   if (item.type === 'transfer') base.target = '1000'
+  if (item.type === 'asr') {
+    base.maxSeconds = 8
+    base.language = 'zh-CN'
+    base.prompt = '请说出您的问题'
+  }
+  if (item.type === 'intent') {
+    base.inputVar = 'lastAsr'
+    base.intents = []
+    base.fallbackBranch = 'other'
+  }
+  if (item.type === 'rag') {
+    base.topK = 3
+    base.questionVar = 'lastAsr'
+    base.answerVar = 'ragAnswer'
+    base.fallbackBranch = 'fallback'
+  }
   return base
 }
 
@@ -750,5 +871,18 @@ function textValue(text: any) {
   padding: var(--space-8) var(--space-4);
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
+}
+.form-tip {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+  line-height: 1.5;
+  code {
+    font-family: var(--font-mono, monospace);
+    padding: 1px 4px;
+    background: var(--color-neutral-100);
+    border-radius: 4px;
+    color: var(--color-text);
+  }
 }
 </style>

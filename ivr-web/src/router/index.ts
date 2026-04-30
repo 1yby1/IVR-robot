@@ -49,6 +49,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '流程编辑器', perms: ['flow:add', 'flow:edit'] }
       },
       {
+        path: '/knowledge/base',
+        name: 'KbBase',
+        component: () => import('@/views/knowledge/KbBase.vue'),
+        meta: { title: '知识库', perms: ['kb:base:list'] }
+      },
+      {
+        path: '/knowledge/doc',
+        name: 'KbDoc',
+        component: () => import('@/views/knowledge/KbDoc.vue'),
+        meta: { title: '知识文档', perms: ['kb:doc:list'] }
+      },
+      {
         path: '/system/user',
         name: 'UserManage',
         component: () => import('@/views/system/UserManage.vue'),

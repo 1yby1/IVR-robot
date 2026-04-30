@@ -107,7 +107,7 @@ const stats = computed(() => [
 const quickLinks = [
   { path: '/flow/list',    label: '新建流程',       icon: Plus },
   { path: '/robot/home',   label: '上传语音资源',   icon: Mic },
-  { path: '/flow/list',    label: '管理知识库',     icon: BookOpen }
+  { path: '/knowledge/base', label: '管理知识库',   icon: BookOpen }
 ]
 
 async function fetchOverview() {

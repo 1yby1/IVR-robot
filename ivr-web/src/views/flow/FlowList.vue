@@ -75,8 +75,9 @@
         <div>
           <div class="debug-title">{{ debugDialog.flow?.flowName }}</div>
           <div class="debug-meta">
-            {{ debugDialog.response?.status === 'ended' ? '已结束' : debugDialog.response?.status === 'waiting' ? '等待输入' : '运行中' }}
+            {{ statusLabel }}
             <span v-if="debugDialog.response?.currentNodeName"> · {{ debugDialog.response.currentNodeName }}</span>
+            <span v-if="waitingHint" class="waiting-hint"> · {{ waitingHint }}</span>
           </div>
         </div>
         <el-button size="small" :loading="debugDialog.loading" @click="restartDebug">重新开始</el-button>
@@ -115,7 +116,7 @@
         <el-input
           v-model="debugDialog.input"
           :disabled="debugDialog.response?.status === 'ended'"
-          placeholder="输入按键，例如 1"
+          :placeholder="inputPlaceholder"
           @keyup.enter="sendDebugInput()"
         />
         <el-button
@@ -161,6 +162,29 @@ const debugDialog = reactive({
   input: '',
   response: null as FlowDebugResponse | null,
   messages: [] as { type: 'event' | 'prompt' | 'input' | 'result'; text: string }[]
+})
+
+const statusLabel = computed(() => {
+  const status = debugDialog.response?.status
+  if (status === 'ended') return '已结束'
+  if (status === 'waiting') {
+    return debugDialog.response?.waitingFor === 'asr' ? '等待语音输入' : '等待按键'
+  }
+  return '运行中'
+})
+
+const inputPlaceholder = computed(() => {
+  if (debugDialog.response?.waitingFor === 'asr') {
+    return '输入模拟语音文本，如「我想查账单」'
+  }
+  return '输入按键，例如 1'
+})
+
+const waitingHint = computed(() => {
+  if (debugDialog.response?.status !== 'waiting') return ''
+  return debugDialog.response?.waitingFor === 'asr'
+    ? '语音节点已暂停，输入文本即可继续'
+    : '按键节点已暂停，输入或点击下方选项'
 })
 
 async function fetchList() {
@@ -330,6 +354,9 @@ onMounted(fetchList)
   margin-top: 2px;
   font-size: var(--text-xs);
   color: var(--color-text-muted);
+}
+.waiting-hint {
+  color: var(--color-primary);
 }
 .debug-form {
   display: grid;

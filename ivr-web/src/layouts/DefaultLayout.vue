@@ -88,7 +88,7 @@ import { useUserStore } from '@/stores/user'
 import { ElMessageBox } from 'element-plus'
 import {
   Phone, Home, Workflow, Users, ShieldCheck, Menu, PhoneCall, ListChecks,
-  ChevronDown, LogOut
+  ChevronDown, LogOut, BookOpen, FileText
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -102,6 +102,8 @@ const group1 = [
   { path: '/flow/list',  label: '流程列表', icon: Workflow, perm: 'flow:list' }
 ]
 const group2 = [
+  { path: '/knowledge/base', label: '知识库', icon: BookOpen, perm: 'kb:base:list' },
+  { path: '/knowledge/doc', label: '知识文档', icon: FileText, perm: 'kb:doc:list' },
   { path: '/system/user', label: '用户管理', icon: Users, perm: 'system:user:list' },
   { path: '/system/role', label: '角色管理', icon: ShieldCheck, perm: 'system:role:list' },
   { path: '/system/menu', label: '菜单管理', icon: Menu, perm: 'system:menu:list' }
