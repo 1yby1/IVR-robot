@@ -69,6 +69,17 @@ public class PermissionInterceptor implements HandlerInterceptor {
         rules.add(new Rule(HttpMethod.POST.name(), "/flow/*/offline", "flow:publish"));
         rules.add(new Rule(HttpMethod.DELETE.name(), "/flow/*", "flow:delete"));
 
+        rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/bases/**", "kb:base:list"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/bases", "kb:base:add"));
+        rules.add(new Rule(HttpMethod.PUT.name(), "/knowledge/bases/*", "kb:base:edit"));
+        rules.add(new Rule(HttpMethod.DELETE.name(), "/knowledge/bases/*", "kb:base:delete"));
+
+        rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/docs/**", "kb:doc:list"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs/*/reindex", "kb:doc:reindex"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs", "kb:doc:add"));
+        rules.add(new Rule(HttpMethod.PUT.name(), "/knowledge/docs/*", "kb:doc:edit"));
+        rules.add(new Rule(HttpMethod.DELETE.name(), "/knowledge/docs/*", "kb:doc:delete"));
+
         rules.add(new Rule(null, "/system/user/**", "system:user:list"));
         rules.add(new Rule(null, "/system/role/**", "system:role:list"));
         rules.add(new Rule(null, "/system/menu/**", "system:menu:list"));

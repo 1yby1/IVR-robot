@@ -10,7 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <p>扫描全量 com.ivr 包，引入其他模块（engine / ai / call）的 Bean。
  */
 @SpringBootApplication(scanBasePackages = "com.ivr")
-@MapperScan(basePackages = "com.ivr.admin.mapper")
+@MapperScan(basePackages = {"com.ivr.admin.mapper", "com.ivr.ai.rag.mapper"})
 public class AdminApplication {
 
     public static void main(String[] args) {
