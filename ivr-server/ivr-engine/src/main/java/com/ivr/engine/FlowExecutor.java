@@ -1,5 +1,6 @@
 package com.ivr.engine;
 
+import com.ivr.engine.channel.CallChannel;
 import com.ivr.engine.event.FlowEventListener;
 import com.ivr.engine.graph.FlowGraph;
 import com.ivr.engine.graph.FlowGraphProvider;
@@ -16,13 +17,18 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 流程执行器：按 LogicFlow 节点图同步推进，遇到 {@code waitFor} 节点立即暂停 + 返回。
  *
- * <p>三个入口：
+ * <p>四个入口：
  * <ul>
- *   <li>{@link #start(FlowContext)} —— 一通呼叫接通后调用，从 start 节点推进到首个等待点 / 终止</li>
+ *   <li>{@link #start(FlowContext)} —— 一通呼叫接通前调用：加载流程、建会话、发 answer，
+ *       会话置为等待 {@code answer}（**不**立即推进）。</li>
+ *   <li>{@link #resumeOnAnswer(String)} —— CHANNEL_ANSWER 事件回喂，从 start 节点开始推进。
+ *       与异步 {@code uuid_answer} 解耦，避免向未应答的通道下发媒体命令。</li>
  *   <li>{@link #resumeWithDtmf(String, String)} —— DTMF 事件喂回，继续推进</li>
  *   <li>{@link #resumeWithAsr(String, String)} —— ASR 文本喂回，继续推进</li>
  *   <li>{@link #abort(String)} —— 挂机或异常清理</li>
@@ -41,22 +47,38 @@ public class FlowExecutor {
     private final SessionStore sessionStore;
     private final FlowGraphProvider graphProvider;
     private final FlowEventListener listener;
+    private final CallChannel channel;
 
     public FlowExecutor(Map<String, NodeHandler> handlers,
                         SessionStore sessionStore,
                         FlowGraphProvider graphProvider,
-                        FlowEventListener listener) {
-        this.handlers = handlers;
+                        FlowEventListener listener,
+                        CallChannel channel) {
+        this.handlers = handlers.values().stream()
+                .collect(Collectors.toMap(
+                        NodeHandler::type,
+                        Function.identity(),
+                        (left, right) -> {
+                            throw new IllegalStateException("Duplicate NodeHandler type: " + left.type());
+                        },
+                        LinkedHashMap::new));
         this.sessionStore = sessionStore;
         this.graphProvider = graphProvider;
         this.listener = listener;
+        this.channel = channel;
     }
 
     public List<String> supportedNodeTypes() {
         return handlers.keySet().stream().sorted().toList();
     }
 
-    /** 启动一通呼叫的流程执行。会话以 callUuid 为 sessionId 索引。 */
+    /**
+     * 启动一通呼叫的流程执行。会话以 callUuid 为 sessionId 索引。
+     *
+     * <p>**不立即推进流程**：发 {@code uuid_answer} 后把会话置成 waitingFor=="answer"，
+     * 等 ESL 的 CHANNEL_ANSWER 事件触发 {@link #resumeOnAnswer(String)} 后再开始播报。
+     * 这样把"应答 + 播报"的次序固化下来，避免给未应答的通道发 uuid_broadcast。
+     */
     public void start(FlowContext ctx) {
         if (ctx == null || !StringUtils.hasText(ctx.getCallUuid())) {
             throw new IllegalArgumentException("callUuid is required");
@@ -95,11 +117,26 @@ public class FlowExecutor {
         session.setFlowVersion(ctx.getFlowVersion());
         session.setGraph(graph);
         session.setContext(ctx);
+        session.setCurrentNodeId(startNode.getId());
+        session.setStatus(FlowSession.STATUS_WAITING);
+        session.setWaitingFor("answer");
         sessionStore.save(session);
 
-        log.info("[FlowExecutor] start session={} flow={} version={} from={}",
+        log.info("[FlowExecutor] start session={} flow={} version={} from={} (waiting for answer)",
                 session.getSessionId(), ctx.getFlowId(), ctx.getFlowVersion(), startNode.getId());
-        advance(session, startNode.getId());
+        channel.answer(ctx.getCallUuid());
+    }
+
+    /** CHANNEL_ANSWER 回喂，从 start 节点开始推进。LoggingCallChannel 模式下由调用方紧跟 start 调用。 */
+    public void resumeOnAnswer(String callUuid) {
+        FlowSession session = requireWaitingSession(callUuid, "answer");
+        if (session == null) {
+            return;
+        }
+        String startNodeId = session.getCurrentNodeId();
+        session.setStatus(FlowSession.STATUS_RUNNING);
+        session.setWaitingFor(null);
+        advance(session, startNodeId);
     }
 
     /** DTMF 事件回喂，仅当会话处于 dtmf 等待时生效。 */
