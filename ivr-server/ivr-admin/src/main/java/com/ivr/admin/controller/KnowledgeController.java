@@ -2,6 +2,8 @@ package com.ivr.admin.controller;
 
 import com.ivr.admin.dto.KnowledgeBaseRequest;
 import com.ivr.admin.dto.KnowledgeDocRequest;
+import com.ivr.admin.dto.KnowledgeRetrievalDebugRequest;
+import com.ivr.admin.dto.KnowledgeRetrievalDebugResponse;
 import com.ivr.admin.service.KnowledgeAdminService;
 import com.ivr.common.result.R;
 import jakarta.validation.Valid;
@@ -73,6 +75,11 @@ public class KnowledgeController {
     @PostMapping("/docs")
     public R<Long> createDoc(@Valid @RequestBody KnowledgeDocRequest request) {
         return R.ok(knowledgeAdminService.createDoc(request));
+    }
+
+    @PostMapping("/debug/retrieval")
+    public R<KnowledgeRetrievalDebugResponse> debugRetrieval(@Valid @RequestBody KnowledgeRetrievalDebugRequest request) {
+        return R.ok(knowledgeAdminService.debugRetrieval(request));
     }
 
     @PutMapping("/docs/{id}")

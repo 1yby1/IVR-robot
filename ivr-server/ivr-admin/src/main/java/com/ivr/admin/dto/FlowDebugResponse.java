@@ -17,6 +17,7 @@ public class FlowDebugResponse {
     private List<String> events;
     private List<Map<String, String>> options;
     private Map<String, String> variables;
+    private List<String> visitedNodeIds;
 
     public String getSessionId() {
         return sessionId;
@@ -112,5 +113,13 @@ public class FlowDebugResponse {
 
     public void setVariables(Map<String, String> variables) {
         this.variables = variables;
+    }
+
+    public List<String> getVisitedNodeIds() {
+        return visitedNodeIds;
+    }
+
+    public void setVisitedNodeIds(List<String> visitedNodeIds) {
+        this.visitedNodeIds = visitedNodeIds;
     }
 }

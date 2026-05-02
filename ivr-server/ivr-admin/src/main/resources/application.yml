@@ -48,7 +48,7 @@ spring:
           temperature: 0.3
       embedding:
         options:
-          model: ${EMBED_MODEL:text-embedding-v2}
+          model: ${EMBED_MODEL:gte-rerank-v2}
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml

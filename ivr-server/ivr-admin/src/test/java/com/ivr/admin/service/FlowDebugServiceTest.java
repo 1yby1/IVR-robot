@@ -86,6 +86,7 @@ class FlowDebugServiceTest {
         assertThat(response.getStatus()).isEqualTo("ended");
         assertThat(response.getPrompts()).contains("未识别您的意图");
         assertThat(response.getVariables()).containsEntry("lastIntent", "other");
+        assertThat(response.getVisitedNodeIds()).containsExactly("start", "ask", "intent", "fallback", "end2");
     }
 
     @Test
@@ -120,6 +121,7 @@ class FlowDebugServiceTest {
         FlowDebugResponse start = service.start(2L, new FlowDebugStartRequest());
         assertThat(start.getStatus()).isEqualTo("waiting");
         assertThat(start.getWaitingFor()).isEqualTo("asr");
+        assertThat(start.getVisitedNodeIds()).containsExactly("start", "ask");
 
         FlowDebugInputRequest input = new FlowDebugInputRequest();
         input.setInput("我想查账单");
@@ -129,6 +131,7 @@ class FlowDebugServiceTest {
         assertThat(response.getPrompts()).contains("正在为您查询账单");
         assertThat(response.getVariables()).containsEntry("lastIntent", "查询账单");
         assertThat(response.getEvents()).anyMatch(e -> e.contains("命中") && e.contains("查询账单"));
+        assertThat(response.getVisitedNodeIds()).containsExactly("start", "ask", "intent", "bill", "end");
     }
 
     @Test

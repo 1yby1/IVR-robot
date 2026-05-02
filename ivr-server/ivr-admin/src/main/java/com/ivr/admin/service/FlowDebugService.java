@@ -10,9 +10,18 @@ import com.ivr.ai.rag.KnowledgeService;
 import com.ivr.common.exception.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.expression.Expression;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -31,6 +40,10 @@ public class FlowDebugService {
     private static final Logger log = LoggerFactory.getLogger(FlowDebugService.class);
     private static final int MAX_STEPS = 50;
     private static final Pattern VAR_PATTERN = Pattern.compile("\\$\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}");
+    private static final ExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
     private static final String DEFAULT_RAG_TEMPLATE = """
             你是客服助手，必须严格依据下方资料回答客户问题。资料中没有答案时直接回答「抱歉，这个问题需要人工帮您处理，正在为您转接」。
             资料：
@@ -156,6 +169,7 @@ public class FlowDebugService {
             session.currentNodeId = node.id;
             session.status = "running";
             session.waitingFor = null;
+            rememberVisitedNode(session, node.id);
             events.add("进入节点：" + node.name());
             record(session, node, "enter", Map.of("name", node.name(), "bizType", node.bizType()));
 
@@ -198,6 +212,29 @@ public class FlowDebugService {
                 events.add("等待用户语音文本输入（请在输入框中输入要识别的文字）");
                 return buildResponse(session, prompts, events);
             }
+            if ("condition".equals(bizType)) {
+                String nextId = handleCondition(node, session, events);
+                if (!StringUtils.hasText(nextId)) {
+                    return finish(session, "条件节点未匹配到后续分支", prompts, events);
+                }
+                currentNodeId = nextId;
+                continue;
+            }
+            if ("var_assign".equals(bizType)) {
+                currentNodeId = handleVarAssign(node, session, events);
+                if (!StringUtils.hasText(currentNodeId)) {
+                    return finish(session, "变量赋值节点没有后续节点", prompts, events);
+                }
+                continue;
+            }
+            if ("http".equals(bizType)) {
+                String nextId = handleHttp(node, session, events);
+                if (!StringUtils.hasText(nextId)) {
+                    return finish(session, "HTTP 节点没有后续节点", prompts, events);
+                }
+                currentNodeId = nextId;
+                continue;
+            }
             if ("intent".equals(bizType)) {
                 String nextId = handleIntent(node, session, events);
                 if (!StringUtils.hasText(nextId)) {
@@ -231,6 +268,113 @@ public class FlowDebugService {
             }
         }
         return finish(session, "执行步数超过上限，请检查流程是否存在循环", prompts, events);
+    }
+
+    /**
+     * 条件节点：计算表达式，表达式结果作为分支 key。
+     */
+    private String handleCondition(Node node, DebugSession session, List<String> events) {
+        String expression = node.stringProp("expression", "");
+        if (!StringUtils.hasText(expression)) {
+            events.add("条件节点未配置表达式，走默认分支");
+            record(session, node, "condition", Map.of("status", "skipped", "reason", "empty_expression"));
+            return resolveBranch(session.graph, node.id, "default");
+        }
+        try {
+            StandardEvaluationContext ec = new StandardEvaluationContext();
+            ec.setVariable("vars", session.variables);
+            ec.setVariable("caller", session.variables.get("caller"));
+            ec.setVariable("callee", session.variables.get("callee"));
+            ec.setVariable("lastDtmf", session.variables.get("lastDtmf"));
+            ec.setVariable("lastAsr", session.variables.get("lastAsr"));
+            ec.setVariable("lastInput", session.variables.get("lastInput"));
+            ec.setRootObject(new ConditionRoot(session.variables));
+            Expression expr = EXPRESSION_PARSER.parseExpression(expression);
+            Object value = expr.getValue(ec);
+            String branch = value == null ? "default" : value.toString();
+            events.add("条件判断命中：" + branch);
+            record(session, node, "condition", Map.of("expression", expression, "branch", branch));
+            return resolveBranch(session.graph, node.id, branch);
+        } catch (Exception e) {
+            log.warn("[Debug] condition eval failed expr={} err={}", expression, e.toString());
+            events.add("条件判断失败，流程结束");
+            record(session, node, "condition", Map.of("status", "failed", "error", diagnostic(e)));
+            return "";
+        }
+    }
+
+    /**
+     * 变量赋值节点：把渲染后的文本写入 session.variables。
+     */
+    private String handleVarAssign(Node node, DebugSession session, List<String> events) {
+        String varName = node.stringProp("varName", "").trim();
+        if (!StringUtils.hasText(varName)) {
+            events.add("变量赋值失败：变量名为空");
+            record(session, node, "var_assign", Map.of("status", "failed", "reason", "empty_var_name"));
+            return "";
+        }
+        String value = renderVariables(node.stringProp("value", ""), session.variables);
+        session.variables.put(varName, value);
+        events.add("变量赋值：" + varName + " = " + abbreviate(value, 80));
+        record(session, node, "var_assign", Map.of("varName", varName, "value", value));
+        return firstNext(session.graph, node.id);
+    }
+
+    /**
+     * HTTP 节点：调外部接口，2xx 走默认分支，失败或非 2xx 走 fallback 分支。
+     */
+    private String handleHttp(Node node, DebugSession session, List<String> events) {
+        String fallback = node.stringProp("fallbackBranch", "fallback");
+        String url = renderVariables(node.stringProp("url", ""), session.variables);
+        if (!StringUtils.hasText(url)) {
+            events.add("HTTP 调用跳过：URL 为空，走 fallback：" + fallback);
+            record(session, node, "http", Map.of("status", "skipped", "reason", "empty_url"));
+            return resolveBranch(session.graph, node.id, fallback);
+        }
+
+        String method = node.stringProp("method", "GET").trim().toUpperCase();
+        String body = renderVariables(node.stringProp("bodyTemplate", ""), session.variables);
+        String responseVar = node.stringProp("responseVar", "httpResponse");
+        String statusVar = node.stringProp("statusVar", "httpStatus");
+        int timeoutSec = Math.max(1, node.intProp("timeoutSec", 5));
+
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(timeoutSec));
+            if (StringUtils.hasText(body) && !hasHttpBody(method)) {
+                method = "POST";
+            }
+            if (hasHttpBody(method)) {
+                builder.header("Content-Type", "application/json");
+                builder.method(method, HttpRequest.BodyPublishers.ofString(body));
+            } else {
+                builder.method(method, HttpRequest.BodyPublishers.noBody());
+            }
+            HttpResponse<String> response = HTTP_CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            String responseBody = Objects.toString(response.body(), "");
+            session.variables.put(responseVar, responseBody);
+            session.variables.put(statusVar, String.valueOf(response.statusCode()));
+            boolean ok = response.statusCode() >= 200 && response.statusCode() < 300;
+            events.add("HTTP 调用完成：" + response.statusCode() + "，响应写入 " + responseVar);
+            record(session, node, "http", Map.of(
+                    "status", ok ? "ok" : "non_2xx",
+                    "httpStatus", response.statusCode(),
+                    "responseVar", responseVar,
+                    "responsePreview", abbreviate(responseBody, 200)
+            ));
+            return resolveBranch(session.graph, node.id, ok ? null : fallback);
+        } catch (Exception e) {
+            session.variables.put(statusVar, "error");
+            session.variables.put(responseVar, diagnostic(e));
+            events.add("HTTP 调用失败，走 fallback：" + fallback);
+            record(session, node, "http", Map.of("status", "failed", "error", diagnostic(e)));
+            return resolveBranch(session.graph, node.id, fallback);
+        }
+    }
+
+    private boolean hasHttpBody(String method) {
+        return "POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method);
     }
 
     /**
@@ -285,7 +429,6 @@ public class FlowDebugService {
             record(session, node, "rag", Map.of("status", "skipped", "reason", "empty_question"));
             return resolveBranch(session.graph, node.id, fallback);
         }
-
         List<KnowledgeService.KnowledgeChunk> chunks;
         try {
             chunks = knowledgeService.retrieve(kbId, question, topK);
@@ -313,9 +456,10 @@ public class FlowDebugService {
                     "question", question
             ));
         } catch (Exception e) {
-            log.warn("[Debug] rag llm failed err={}", e.toString());
-            events.add("生成失败，走 fallback：" + fallback);
-            record(session, node, "rag", Map.of("status", "llm_failed"));
+            String error = diagnostic(e);
+            log.warn("[Debug] rag llm failed {}", error, e);
+            events.add("生成失败，走 fallback：" + fallback + "（详情见通话事件 payload.error）");
+            record(session, node, "rag", Map.of("status", "llm_failed", "error", error));
             return resolveBranch(session.graph, node.id, fallback);
         }
         if (!StringUtils.hasText(answer)) {
@@ -430,7 +574,18 @@ public class FlowDebugService {
                 ? options(current, session.graph)
                 : List.of());
         response.setVariables(session.variables);
+        response.setVisitedNodeIds(new ArrayList<>(session.visitedNodeIds));
         return response;
+    }
+
+    private void rememberVisitedNode(DebugSession session, String nodeId) {
+        if (!StringUtils.hasText(nodeId)) {
+            return;
+        }
+        if (session.visitedNodeIds.isEmpty()
+                || !Objects.equals(session.visitedNodeIds.get(session.visitedNodeIds.size() - 1), nodeId)) {
+            session.visitedNodeIds.add(nodeId);
+        }
     }
 
     private Graph parseGraph(String graphJson) {
@@ -584,6 +739,24 @@ public class FlowDebugService {
         );
     }
 
+    private String diagnostic(Throwable e) {
+        if (e == null) {
+            return "";
+        }
+        String message = Objects.toString(e.getMessage(), "");
+        String text = e.getClass().getSimpleName() + (StringUtils.hasText(message) ? ": " + message : "");
+        text = text.replaceAll("(?i)(sk-[A-Za-z0-9_-]{6})[A-Za-z0-9_-]+", "$1***");
+        text = text.replaceAll("(?i)(api[-_ ]?key\\s*[:=]\\s*)[^\\s,;}]+", "$1***");
+        return text.length() <= 500 ? text : text.substring(0, 500);
+    }
+
+    private String abbreviate(String text, int maxLength) {
+        if (text == null || text.length() <= maxLength) {
+            return Objects.toString(text, "");
+        }
+        return text.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
     private String endReason(String result) {
         if (result == null) {
             return "normal";
@@ -635,6 +808,7 @@ public class FlowDebugService {
         private String waitingFor;
         private String result = "";
         private final Map<String, String> variables = new LinkedHashMap<>();
+        private final List<String> visitedNodeIds = new ArrayList<>();
     }
 
     private static class Graph {
@@ -717,6 +891,38 @@ public class FlowDebugService {
                 }
             }
             return StringUtils.hasText(text) ? text : "";
+        }
+    }
+
+    private static class ConditionRoot {
+        private final Map<String, String> vars;
+
+        private ConditionRoot(Map<String, String> vars) {
+            this.vars = vars == null ? Map.of() : vars;
+        }
+
+        public Map<String, String> getVars() {
+            return vars;
+        }
+
+        public String getCaller() {
+            return vars.get("caller");
+        }
+
+        public String getCallee() {
+            return vars.get("callee");
+        }
+
+        public String getLastDtmf() {
+            return vars.get("lastDtmf");
+        }
+
+        public String getLastAsr() {
+            return vars.get("lastAsr");
+        }
+
+        public String getLastInput() {
+            return vars.get("lastInput");
         }
     }
 }

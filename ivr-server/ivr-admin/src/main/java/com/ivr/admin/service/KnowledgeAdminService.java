@@ -7,6 +7,10 @@ import com.baomidou.mybatisplus.extension.toolkit.Db;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ivr.admin.dto.KnowledgeBaseRequest;
 import com.ivr.admin.dto.KnowledgeDocRequest;
+import com.ivr.admin.dto.KnowledgeRetrievalDebugRequest;
+import com.ivr.admin.dto.KnowledgeRetrievalDebugResponse;
+import com.ivr.ai.LlmService;
+import com.ivr.ai.rag.KnowledgeService;
 import com.ivr.ai.rag.entity.KbBase;
 import com.ivr.ai.rag.entity.KbChunk;
 import com.ivr.ai.rag.entity.KbDoc;
@@ -31,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class KnowledgeAdminService {
@@ -40,23 +45,37 @@ public class KnowledgeAdminService {
     private static final int CHUNK_MAX_CHARS = 500;
     private static final int CHUNK_OVERLAP_CHARS = 80;
     private static final int LIST_CONTENT_SNIPPET_CHARS = 120;
+    private static final String DEFAULT_RAG_TEMPLATE = """
+            你是客服助手，必须严格依据下方资料回答客户问题。资料中没有答案时直接回答「抱歉，这个问题需要人工帮您处理，正在为您转接」。
+            资料：
+            {context}
+
+            客户问题：{question}
+            请用 80 字以内、口语化的中文回答，不要重复「资料」二字。
+            """;
 
     private final KbBaseMapper baseMapper;
     private final KbDocMapper docMapper;
     private final KbChunkMapper chunkMapper;
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
     private final ObjectMapper objectMapper;
+    private final KnowledgeService knowledgeService;
+    private final LlmService llmService;
 
     public KnowledgeAdminService(KbBaseMapper baseMapper,
                                  KbDocMapper docMapper,
                                  KbChunkMapper chunkMapper,
                                  ObjectProvider<EmbeddingModel> embeddingModelProvider,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 KnowledgeService knowledgeService,
+                                 LlmService llmService) {
         this.baseMapper = baseMapper;
         this.docMapper = docMapper;
         this.chunkMapper = chunkMapper;
         this.embeddingModelProvider = embeddingModelProvider;
         this.objectMapper = objectMapper;
+        this.knowledgeService = knowledgeService;
+        this.llmService = llmService;
     }
 
     public Map<String, Object> pageBases(int current, int size, String keyword) {
@@ -151,6 +170,67 @@ public class KnowledgeAdminService {
         Long chunkCount = chunkMapper.selectCount(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, id));
         Map<Long, String> kbNames = kbNameMap(List.of(doc.getKbId()));
         return docDetailRow(doc, kbNames, Objects.requireNonNullElse(chunkCount, 0L));
+    }
+
+    public KnowledgeRetrievalDebugResponse debugRetrieval(KnowledgeRetrievalDebugRequest request) {
+        if (request.getKbId() != null) {
+            requiredBase(request.getKbId());
+        }
+        int topK = request.getTopK() == null ? 3 : request.getTopK();
+        String question = request.getQuestion().trim();
+
+        KnowledgeRetrievalDebugResponse response = new KnowledgeRetrievalDebugResponse();
+        response.setKbId(request.getKbId());
+        response.setQuestion(question);
+        response.setTopK(topK);
+
+        List<KnowledgeService.KnowledgeChunk> chunks;
+        try {
+            chunks = knowledgeService.retrieve(request.getKbId(), question, topK);
+        } catch (Exception e) {
+            response.setAnswerStatus("retrieve_failed");
+            response.setAnswer("");
+            response.setError(diagnostic(e));
+            response.setPrompt("");
+            return response;
+        }
+        response.setChunks(chunks.stream().map(this::debugChunk).toList());
+
+        String context = chunks.stream()
+                .map(chunk -> "- " + chunk.title() + "：" + chunk.content())
+                .collect(Collectors.joining("\n"));
+        String prompt = DEFAULT_RAG_TEMPLATE
+                .replace("{context}", context)
+                .replace("{question}", question);
+        response.setPrompt(prompt);
+
+        if (chunks.isEmpty()) {
+            response.setAnswerStatus("no_hits");
+            response.setAnswer("");
+            response.setError("没有检索到可用于回答的知识片段");
+            return response;
+        }
+        if (!Boolean.TRUE.equals(request.getGenerateAnswer())) {
+            response.setAnswerStatus("skipped");
+            response.setAnswer("");
+            return response;
+        }
+        try {
+            String answer = llmService.chatTemplate(DEFAULT_RAG_TEMPLATE, Map.of(
+                    "context", context,
+                    "question", question
+            ));
+            response.setAnswerStatus(StringUtils.hasText(answer) ? "ok" : "empty");
+            response.setAnswer(StringUtils.hasText(answer) ? answer.trim() : "");
+            if (!StringUtils.hasText(answer)) {
+                response.setError("模型返回内容为空");
+            }
+        } catch (Exception e) {
+            response.setAnswerStatus("failed");
+            response.setAnswer("");
+            response.setError(diagnostic(e));
+        }
+        return response;
     }
 
     public Long createDoc(KnowledgeDocRequest request) {
@@ -408,6 +488,15 @@ public class KnowledgeAdminService {
         return trimmed.substring(0, max) + "…";
     }
 
+    private KnowledgeRetrievalDebugResponse.Chunk debugChunk(KnowledgeService.KnowledgeChunk source) {
+        KnowledgeRetrievalDebugResponse.Chunk chunk = new KnowledgeRetrievalDebugResponse.Chunk();
+        chunk.setDocId(source.docId());
+        chunk.setTitle(source.title());
+        chunk.setContent(source.content());
+        chunk.setScore(Math.round(source.score() * 10000) / 10000.0);
+        return chunk;
+    }
+
     private Map<String, Object> pageResult(List<Map<String, Object>> records, long total, long current, long size) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("records", records);
@@ -424,5 +513,13 @@ public class KnowledgeAdminService {
 
     private String formatTime(LocalDateTime time) {
         return time == null ? "" : TIME_FMT.format(time);
+    }
+
+    private String diagnostic(Throwable e) {
+        String message = Objects.toString(e == null ? "" : e.getMessage(), "");
+        String text = e == null ? "" : e.getClass().getSimpleName() + (StringUtils.hasText(message) ? ": " + message : "");
+        text = text.replaceAll("(?i)(sk-[A-Za-z0-9_-]{6})[A-Za-z0-9_-]+", "$1***");
+        text = text.replaceAll("(?i)(api[-_ ]?key\\s*[:=]\\s*)[^\\s,;}]+", "$1***");
+        return text.length() <= 500 ? text : text.substring(0, 500);
     }
 }

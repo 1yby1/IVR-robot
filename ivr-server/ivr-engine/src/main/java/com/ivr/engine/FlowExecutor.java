@@ -111,6 +111,9 @@ public class FlowExecutor {
         }
 
         ctx.setSessionId(ctx.getCallUuid());
+        ctx.setVar("callUuid", ctx.getCallUuid());
+        ctx.setVar("caller", ctx.getCaller());
+        ctx.setVar("callee", ctx.getCallee());
         FlowSession session = new FlowSession();
         session.setSessionId(ctx.getCallUuid());
         session.setFlowId(ctx.getFlowId());

@@ -11,9 +11,11 @@ import com.ivr.engine.node.NodeHandler;
 import com.ivr.engine.node.handler.ConditionNodeHandler;
 import com.ivr.engine.node.handler.DtmfNodeHandler;
 import com.ivr.engine.node.handler.EndNodeHandler;
+import com.ivr.engine.node.handler.HttpNodeHandler;
 import com.ivr.engine.node.handler.PlayNodeHandler;
 import com.ivr.engine.node.handler.StartNodeHandler;
 import com.ivr.engine.node.handler.TransferNodeHandler;
+import com.ivr.engine.node.handler.VarAssignNodeHandler;
 import com.ivr.engine.node.handler.VoicemailNodeHandler;
 import com.ivr.engine.session.FlowSession;
 import com.ivr.engine.session.InMemorySessionStore;
@@ -79,6 +81,8 @@ class FlowExecutorTest {
         handlers.put("play", new PlayNodeHandler(channel));
         handlers.put("dtmf", new DtmfNodeHandler(channel));
         handlers.put("condition", new ConditionNodeHandler());
+        handlers.put("var_assign", new VarAssignNodeHandler());
+        handlers.put("http", new HttpNodeHandler());
         handlers.put("transfer", new TransferNodeHandler(channel));
         handlers.put("voicemail", new VoicemailNodeHandler(channel));
 
@@ -206,7 +210,8 @@ class FlowExecutorTest {
     @Test
     void supportedNodeTypes_listsAllRegistered() {
         assertThat(executor.supportedNodeTypes())
-                .contains("start", "end", "play", "dtmf", "condition", "transfer", "voicemail");
+                .contains("start", "end", "play", "dtmf", "condition", "var_assign",
+                        "http", "transfer", "voicemail");
     }
 
     @Test
@@ -249,5 +254,31 @@ class FlowExecutorTest {
         ArgumentCaptor<CallChannel.PlaybackRequest> captor = ArgumentCaptor.forClass(CallChannel.PlaybackRequest.class);
         verify(channel).playback(eq("call-tpl"), captor.capture());
         assertThat(captor.getValue().text()).isEqualTo("Hello Alice");
+    }
+
+    @Test
+    void varAssignNode_writesRenderedVariable() {
+        FlowContext ctx = newCtx("call-var");
+        ctx.setVar("level", "VIP");
+
+        VarAssignNodeHandler handler = new VarAssignNodeHandler();
+        NodeHandler.FlowNode node = new NodeHandler.FlowNode();
+        node.properties = Map.of("varName", "greeting", "value", "Hello ${level}");
+        NodeHandler.NodeResult result = handler.execute(node, ctx);
+
+        assertThat(result.branch).isEqualTo("default");
+        assertThat(ctx.getVar("greeting")).isEqualTo("Hello VIP");
+    }
+
+    @Test
+    void httpNode_emptyUrlGoesFallback() {
+        FlowContext ctx = newCtx("call-http");
+
+        HttpNodeHandler handler = new HttpNodeHandler();
+        NodeHandler.FlowNode node = new NodeHandler.FlowNode();
+        node.properties = Map.of("fallbackBranch", "fallback");
+        NodeHandler.NodeResult result = handler.execute(node, ctx);
+
+        assertThat(result.branch).isEqualTo("fallback");
     }
 }

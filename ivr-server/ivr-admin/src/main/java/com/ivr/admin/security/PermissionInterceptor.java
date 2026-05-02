@@ -40,10 +40,19 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (!(principal instanceof Long userId)) {
             throw new BusinessException(401, "登录已过期，请重新登录");
         }
-        if (!permissionService.hasPerm(userId, requiredPerm)) {
+        if (!hasRequiredPerm(userId, requiredPerm)) {
             throw new BusinessException(403, "没有操作权限");
         }
         return true;
+    }
+
+    private boolean hasRequiredPerm(Long userId, String requiredPerm) {
+        for (String perm : requiredPerm.split("\\|")) {
+            if (permissionService.hasPerm(userId, perm)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String findRequiredPerm(String method, String path) {
@@ -60,11 +69,15 @@ public class PermissionInterceptor implements HandlerInterceptor {
         rules.add(new Rule(null, "/robot/call/**", "robot:call:list"));
 
         rules.add(new Rule(HttpMethod.GET.name(), "/flow/page", "flow:list"));
+        rules.add(new Rule(HttpMethod.GET.name(), "/flow/*/versions", "flow:list"));
+        rules.add(new Rule(HttpMethod.GET.name(), "/flow/*/health", "flow:list"));
         rules.add(new Rule(HttpMethod.GET.name(), "/flow/*", "flow:list"));
         rules.add(new Rule(HttpMethod.POST.name(), "/flow", "flow:add"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/flow/ai/generate", "flow:add|flow:edit"));
         rules.add(new Rule(HttpMethod.POST.name(), "/flow/*/debug/start", "flow:list"));
         rules.add(new Rule(HttpMethod.POST.name(), "/flow/debug/*/input", "flow:list"));
         rules.add(new Rule(HttpMethod.PUT.name(), "/flow/*", "flow:edit"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/flow/*/versions/*/restore-draft", "flow:edit"));
         rules.add(new Rule(HttpMethod.POST.name(), "/flow/*/publish", "flow:publish"));
         rules.add(new Rule(HttpMethod.POST.name(), "/flow/*/offline", "flow:publish"));
         rules.add(new Rule(HttpMethod.DELETE.name(), "/flow/*", "flow:delete"));
@@ -74,6 +87,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         rules.add(new Rule(HttpMethod.PUT.name(), "/knowledge/bases/*", "kb:base:edit"));
         rules.add(new Rule(HttpMethod.DELETE.name(), "/knowledge/bases/*", "kb:base:delete"));
 
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/debug/retrieval", "kb:doc:list"));
         rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/docs/**", "kb:doc:list"));
         rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs/*/reindex", "kb:doc:reindex"));
         rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs", "kb:doc:add"));
