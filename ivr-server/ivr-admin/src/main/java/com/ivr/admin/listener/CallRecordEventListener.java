@@ -6,6 +6,7 @@ import com.ivr.engine.graph.FlowGraph;
 import com.ivr.engine.session.FlowSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -15,9 +16,10 @@ import java.util.Objects;
 /**
  * 把 engine 的执行事件桥接到 {@code call_event} / {@code call_log} 表。
  *
- * <p>覆盖 engine 自带的 {@code LoggingFlowEventListener}（后者带 {@code @ConditionalOnMissingBean}）。
+ * <p>覆盖 engine 自带的 {@code LoggingFlowEventListener}。
  */
 @Component
+@Primary
 public class CallRecordEventListener implements FlowEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(CallRecordEventListener.class);

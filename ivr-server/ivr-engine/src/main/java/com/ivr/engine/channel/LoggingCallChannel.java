@@ -2,17 +2,14 @@ package com.ivr.engine.channel;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 /**
  * 占位实现：把所有控制命令打到日志，便于不接 FreeSWITCH 时调试流程引擎。
  *
- * <p>ivr-call 模块以后提供 FreeSwitchCallChannel 时通过 {@code @Primary} 或扣掉本类的
- * {@code @ConditionalOnMissingBean} 自动让位。
+ * <p>ivr-call 模块提供 {@code FreeSwitchCallChannel} 时通过 {@code @Primary} 接管注入。
  */
 @Component
-@ConditionalOnMissingBean(CallChannel.class)
 public class LoggingCallChannel implements CallChannel {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingCallChannel.class);

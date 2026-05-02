@@ -1,13 +1,11 @@
 package com.ivr.engine.session;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 @Component
-@ConditionalOnMissingBean(SessionStore.class)
 public class InMemorySessionStore implements SessionStore {
 
     private final ConcurrentMap<String, FlowSession> sessions = new ConcurrentHashMap<>();

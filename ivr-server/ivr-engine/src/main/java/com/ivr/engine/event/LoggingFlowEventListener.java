@@ -4,16 +4,14 @@ import com.ivr.engine.graph.FlowGraph;
 import com.ivr.engine.session.FlowSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 /**
- * 默认监听器：仅写日志。admin 模块提供 {@code CallRecordEventListener} 时该 bean 自动让位。
+ * 默认监听器：仅写日志。admin 模块提供 {@code @Primary} 的业务监听器时优先使用业务监听器。
  */
 @Component
-@ConditionalOnMissingBean(FlowEventListener.class)
 public class LoggingFlowEventListener implements FlowEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingFlowEventListener.class);
