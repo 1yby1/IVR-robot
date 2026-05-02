@@ -61,7 +61,7 @@ Windows 下如果项目路径包含中文，`spring-boot:run` 可能因为 class
 cd ivr-server
 mvn clean install -DskipTests
 cd ivr-admin
-java -jar target\ivr-admin-exec.jar
+
 ```
 
 

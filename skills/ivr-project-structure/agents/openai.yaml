@@ -1,0 +1,4 @@
+interface:
+  display_name: "IVR Project Structure"
+  short_description: "Keep IVR code in the right modules"
+  default_prompt: "Use $ivr-project-structure to place new IVR code in the correct module and avoid ad hoc files."
