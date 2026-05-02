@@ -57,6 +57,31 @@ export interface KnowledgeDocPayload {
   fileType?: string
 }
 
+export interface KnowledgeRetrievalDebugPayload {
+  kbId?: number
+  question: string
+  topK: number
+  generateAnswer: boolean
+}
+
+export interface KnowledgeRetrievalDebugChunk {
+  docId: string
+  title: string
+  content: string
+  score: number
+}
+
+export interface KnowledgeRetrievalDebugResponse {
+  kbId?: number
+  question: string
+  topK: number
+  answerStatus: 'ok' | 'no_hits' | 'retrieve_failed' | 'failed' | 'empty' | 'skipped'
+  answer: string
+  error?: string
+  prompt: string
+  chunks: KnowledgeRetrievalDebugChunk[]
+}
+
 export function pageKnowledgeBases(params: { current?: number; size?: number; keyword?: string }) {
   return request<PageResult<KnowledgeBase>>({
     url: '/knowledge/bases/page',
@@ -92,6 +117,14 @@ export function deleteKnowledgeBase(id: number | string) {
   return request<void>({
     url: `/knowledge/bases/${id}`,
     method: 'DELETE'
+  })
+}
+
+export function debugKnowledgeRetrieval(data: KnowledgeRetrievalDebugPayload) {
+  return request<KnowledgeRetrievalDebugResponse>({
+    url: '/knowledge/debug/retrieval',
+    method: 'POST',
+    data
   })
 }
 

@@ -79,7 +79,7 @@ const stats = computed(() => [
     value: overview.value?.todayCalls ?? '—',
     unit: '通',
     icon: PhoneIncoming,
-    trend: { dir: 'up', text: '模拟数据 +12%' }
+    trend: { dir: 'up', text: '来自真实通话记录' }
   },
   {
     label: '在线流程',
@@ -93,7 +93,7 @@ const stats = computed(() => [
     value: overview.value?.activeUsers ?? '—',
     unit: '人',
     icon: UserRound,
-    trend: null
+    trend: { dir: 'up', text: '已启用账号' }
   },
   {
     label: 'AI 解决率',

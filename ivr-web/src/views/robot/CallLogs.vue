@@ -11,14 +11,38 @@
       <div class="panel-body">
         <div class="table-tools">
           <el-input
-            v-model="keyword"
+            v-model="filters.keyword"
             clearable
             placeholder="搜索通话 ID / 主叫 / 被叫 / 结果"
             class="search-input"
             @keyup.enter="fetchList"
             @clear="fetchList"
           />
+          <el-select v-model="filters.flowId" clearable filterable placeholder="全部流程" class="flow-filter">
+            <el-option
+              v-for="flow in flowOptions"
+              :key="flow.id"
+              :label="`${flow.flowName}（${flow.flowCode}）`"
+              :value="flow.id"
+            />
+          </el-select>
+          <el-select v-model="filters.endReason" clearable placeholder="全部结果" class="reason-filter">
+            <el-option label="进行中" value="running" />
+            <el-option label="正常" value="normal" />
+            <el-option label="转人工" value="transfer" />
+            <el-option label="超时" value="timeout" />
+            <el-option label="异常" value="error" />
+          </el-select>
+          <el-date-picker
+            v-model="filters.dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            class="date-filter"
+          />
           <el-button @click="fetchList">查询</el-button>
+          <el-button @click="resetFilters">重置</el-button>
         </div>
 
         <el-table :data="list" v-loading="loading" border stripe>
@@ -57,7 +81,7 @@
           <el-table-column prop="startTime" label="开始时间" width="170" />
           <el-table-column label="操作" width="110" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" text type="primary" @click="openEvents(row)">轨迹</el-button>
+              <el-button size="small" text type="primary" @click="openReplay(row)">回放</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -76,49 +100,112 @@
       </div>
     </section>
 
-    <el-dialog v-model="eventDialog.visible" title="通话轨迹" width="760px">
-      <div class="event-head">
-        <code class="code-chip">{{ eventDialog.call?.callUuid }}</code>
-        <span>{{ eventDialog.call?.caller }} → {{ eventDialog.call?.callee }}</span>
+    <el-dialog v-model="replayDialog.visible" title="通话路径回放" width="980px">
+      <div v-loading="replayDialog.loading" class="replay-dialog">
+        <template v-if="replayDialog.data">
+          <div class="event-head">
+            <div>
+              <code class="code-chip">{{ replayDialog.data.callUuid }}</code>
+              <span>{{ replayDialog.data.caller }} → {{ replayDialog.data.callee }}</span>
+            </div>
+            <el-tag :type="reasonType(replayDialog.data.endReason)" effect="plain">
+              {{ reasonText(replayDialog.data.endReason) }}
+            </el-tag>
+          </div>
+
+          <div class="replay-meta">
+            <span>{{ replayDialog.data.flowName }} · v{{ replayDialog.data.flowVersion || 0 }}</span>
+            <span>开始 {{ replayDialog.data.startTime || '-' }}</span>
+            <span>时长 {{ replayDialog.data.duration || 0 }}s</span>
+            <span v-if="replayDialog.data.transferTo">转接 {{ replayDialog.data.transferTo }}</span>
+          </div>
+
+          <div class="replay-grid">
+            <section class="replay-path">
+              <div class="section-title">实际节点路径</div>
+              <div v-if="replayDialog.data.path.length" class="path-list">
+                <div
+                  v-for="step in replayDialog.data.path"
+                  :key="`${step.stepNo}-${step.nodeKey}`"
+                  class="path-step"
+                  :class="`is-${step.level}`"
+                >
+                  <span class="path-index">{{ step.stepNo }}</span>
+                  <div class="path-body">
+                    <strong>{{ step.nodeName || step.nodeKey }}</strong>
+                    <span>{{ step.nodeType }} · {{ step.nodeKey }}</span>
+                    <p>{{ step.summary }}</p>
+                  </div>
+                </div>
+              </div>
+              <el-empty v-else description="暂无进入节点事件" :image-size="80" />
+            </section>
+
+            <section class="replay-events">
+              <div class="section-title">事件时间线</div>
+              <el-table
+                :data="replayDialog.data.events"
+                border
+                stripe
+                max-height="360"
+                highlight-current-row
+                @row-click="selectEvent"
+              >
+                <el-table-column prop="eventTime" label="时间" width="150" />
+                <el-table-column label="级别" width="80">
+                  <template #default="{ row }">
+                    <el-tag :type="eventTagType(row.level)" effect="plain" size="small">
+                      {{ eventLevelText(row.level) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="eventType" label="事件" width="90" />
+                <el-table-column prop="nodeType" label="类型" width="90" />
+                <el-table-column prop="nodeKey" label="节点" width="110" show-overflow-tooltip />
+                <el-table-column prop="summary" label="摘要" min-width="180" show-overflow-tooltip />
+              </el-table>
+            </section>
+          </div>
+
+          <div class="payload-panel">
+            <div class="section-title">Payload 明细</div>
+            <pre v-if="replayDialog.selectedEvent" class="payload-pre">{{ replayDialog.selectedEvent.payloadPretty || replayDialog.selectedEvent.payload }}</pre>
+            <el-empty v-else description="点击上方事件查看 payload" :image-size="70" />
+          </div>
+        </template>
       </div>
-      <el-table :data="eventDialog.events" v-loading="eventDialog.loading" border>
-        <el-table-column prop="eventTime" label="时间" width="170" />
-        <el-table-column prop="eventType" label="事件" width="90">
-          <template #default="{ row }">
-            <el-tag effect="plain" size="small">{{ row.eventType }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="nodeType" label="节点类型" width="100" />
-        <el-table-column prop="nodeKey" label="节点" width="120" show-overflow-tooltip />
-        <el-table-column label="内容" min-width="240" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span>{{ payloadText(row.payload) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { pageCallLogs, listCallEvents } from '@/api/call'
-import type { CallEventItem, CallLogItem } from '@/api/call'
+import { getCallReplay, pageCallLogs } from '@/api/call'
+import type { CallLogItem, CallReplayEvent, CallReplayResponse } from '@/api/call'
+import { listPublishedFlows } from '@/api/flow'
+import type { FlowOptionItem } from '@/api/flow'
 
 const list = ref<CallLogItem[]>([])
+const flowOptions = ref<FlowOptionItem[]>([])
 const loading = ref(false)
-const keyword = ref('')
+const filters = reactive({
+  keyword: '',
+  flowId: '' as number | '',
+  endReason: '',
+  dateRange: [] as string[]
+})
 const pagination = ref({
   current: 1,
   size: 10,
   total: 0
 })
 
-const eventDialog = reactive({
+const replayDialog = reactive({
   visible: false,
   loading: false,
   call: null as CallLogItem | null,
-  events: [] as CallEventItem[]
+  data: null as CallReplayResponse | null,
+  selectedEvent: null as CallReplayEvent | null
 })
 
 async function fetchList() {
@@ -127,7 +214,11 @@ async function fetchList() {
     const res = await pageCallLogs({
       current: pagination.value.current,
       size: pagination.value.size,
-      keyword: keyword.value
+      keyword: filters.keyword,
+      flowId: filters.flowId,
+      endReason: filters.endReason,
+      dateFrom: filters.dateRange?.[0],
+      dateTo: filters.dateRange?.[1]
     })
     list.value = res.records
     pagination.value.total = res.total
@@ -136,15 +227,37 @@ async function fetchList() {
   }
 }
 
-async function openEvents(row: CallLogItem) {
-  eventDialog.call = row
-  eventDialog.visible = true
-  eventDialog.loading = true
+async function fetchFlowOptions() {
+  flowOptions.value = await listPublishedFlows()
+}
+
+async function openReplay(row: CallLogItem) {
+  replayDialog.call = row
+  replayDialog.visible = true
+  replayDialog.loading = true
+  replayDialog.data = null
+  replayDialog.selectedEvent = null
   try {
-    eventDialog.events = await listCallEvents(row.callUuid)
+    replayDialog.data = await getCallReplay(row.callUuid)
+    replayDialog.selectedEvent = replayDialog.data.events.find((item) => item.level === 'danger' || item.level === 'warning')
+      || replayDialog.data.events[0]
+      || null
   } finally {
-    eventDialog.loading = false
+    replayDialog.loading = false
   }
+}
+
+function resetFilters() {
+  filters.keyword = ''
+  filters.flowId = ''
+  filters.endReason = ''
+  filters.dateRange = []
+  pagination.value.current = 1
+  fetchList()
+}
+
+function selectEvent(row: CallReplayEvent) {
+  replayDialog.selectedEvent = row
 }
 
 function reasonText(reason: string) {
@@ -169,17 +282,23 @@ function reasonType(reason: string) {
   return map[reason] || 'info'
 }
 
-function payloadText(payload: string) {
-  if (!payload) return ''
-  try {
-    const data = JSON.parse(payload)
-    return data.text || data.input || data.result || data.message || payload
-  } catch {
-    return payload
-  }
+function eventTagType(level: string) {
+  if (level === 'danger') return 'danger'
+  if (level === 'warning') return 'warning'
+  if (level === 'success') return 'success'
+  return 'info'
 }
 
-onMounted(fetchList)
+function eventLevelText(level: string) {
+  if (level === 'danger') return '异常'
+  if (level === 'warning') return '关注'
+  if (level === 'success') return '成功'
+  return '信息'
+}
+
+onMounted(async () => {
+  await Promise.all([fetchList(), fetchFlowOptions()])
+})
 </script>
 
 <style scoped lang="scss">
@@ -205,10 +324,14 @@ onMounted(fetchList)
 .panel-body { padding: var(--space-4); }
 .table-tools {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
 .search-input { max-width: 360px; }
+.flow-filter { width: 260px; }
+.reason-filter { width: 140px; }
+.date-filter { width: 260px; }
 .pager {
   display: flex;
   justify-content: flex-end;
@@ -235,9 +358,136 @@ onMounted(fetchList)
 .event-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+  > div {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+}
+.replay-dialog {
+  min-height: 320px;
+}
+.replay-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  span {
+    padding: 4px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-neutral-50);
+  }
+}
+.replay-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: var(--space-3);
+}
+.section-title {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.replay-path,
+.replay-events,
+.payload-panel {
+  min-width: 0;
+}
+.path-list {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+.path-step {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  &:last-child {
+    border-bottom: none;
+  }
+  &.is-danger .path-index {
+    border-color: var(--color-error);
+    color: var(--color-error);
+  }
+  &.is-warning .path-index {
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+  }
+  &.is-success .path-index {
+    border-color: var(--color-success);
+    color: var(--color-success);
+  }
+}
+.path-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.path-body {
+  min-width: 0;
+  strong {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text);
+  }
+  span {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--text-xs);
+    color: var(--color-text-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  p {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+}
+.payload-panel {
+  margin-top: var(--space-3);
+}
+.payload-pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-neutral-50);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+@media (max-width: 900px) {
+  .replay-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

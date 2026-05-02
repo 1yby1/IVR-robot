@@ -7,6 +7,7 @@ export interface FlowItem {
   description?: string
   status: number
   currentVersion: number
+  hasDraftDiff: boolean
   updatedAt: string
   graphJson?: string
 }
@@ -23,6 +24,63 @@ export interface FlowPayload {
   flowName: string
   description?: string
   graphJson: string
+}
+
+export interface FlowAiGeneratePayload {
+  requirement: string
+  flowName?: string
+}
+
+export interface FlowAiGenerateResponse {
+  graphJson: string
+  summary: string
+  warnings: string[]
+  validationErrors: string[]
+}
+
+export interface FlowHealthRuntimeStats {
+  sampleCalls: number
+  endedCalls: number
+  runningCalls: number
+  transferCalls: number
+  errorCalls: number
+  timeoutCalls: number
+  avgDurationSeconds: number
+}
+
+export interface FlowHealthIssue {
+  level: 'error' | 'warning' | 'info'
+  category: string
+  nodeId?: string
+  nodeName?: string
+  message: string
+  suggestion: string
+}
+
+export interface FlowNodeHealthItem {
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  incoming: number
+  outgoing: number
+  enterCount: number
+  errorCount: number
+  fallbackCount: number
+  aiHitCount: number
+  transferCount: number
+  successRate?: number
+  healthLevel: 'success' | 'warning' | 'danger' | 'info'
+}
+
+export interface FlowHealthResponse {
+  flowId: number
+  flowName: string
+  score: number
+  grade: string
+  summary: string
+  runtimeStats: FlowHealthRuntimeStats
+  issues: FlowHealthIssue[]
+  nodes: FlowNodeHealthItem[]
 }
 
 export interface FlowDebugOption {
@@ -44,6 +102,7 @@ export interface FlowDebugResponse {
   events: string[]
   options: FlowDebugOption[]
   variables: Record<string, string>
+  visitedNodeIds: string[]
 }
 
 export interface FlowOptionItem {
@@ -51,6 +110,23 @@ export interface FlowOptionItem {
   flowCode: string
   flowName: string
   currentVersion: number
+}
+
+export interface FlowVersionItem {
+  id: number
+  flowId: number
+  version: number
+  versionLabel: string
+  draft: boolean
+  published: boolean
+  current: boolean
+  diffFromPublished?: boolean
+  changeNote?: string
+  createdBy?: number
+  createdAt: string
+  graphJson: string
+  nodeCount: number
+  edgeCount: number
 }
 
 export function pageFlows(params: { current?: number; size?: number; keyword?: string }) {
@@ -68,9 +144,24 @@ export function getFlow(id: number | string) {
   })
 }
 
+export function getFlowHealth(id: number | string) {
+  return request<FlowHealthResponse>({
+    url: `/flow/${id}/health`,
+    method: 'GET'
+  })
+}
+
 export function createFlow(data: FlowPayload) {
   return request<number>({
     url: '/flow',
+    method: 'POST',
+    data
+  })
+}
+
+export function generateFlowByAi(data: FlowAiGeneratePayload) {
+  return request<FlowAiGenerateResponse>({
+    url: '/flow/ai/generate',
     method: 'POST',
     data
   })
@@ -94,6 +185,20 @@ export function publishFlow(id: number | string) {
 export function offlineFlow(id: number | string) {
   return request<void>({
     url: `/flow/${id}/offline`,
+    method: 'POST'
+  })
+}
+
+export function listFlowVersions(id: number | string) {
+  return request<FlowVersionItem[]>({
+    url: `/flow/${id}/versions`,
+    method: 'GET'
+  })
+}
+
+export function restoreFlowVersionToDraft(id: number | string, version: number) {
+  return request<void>({
+    url: `/flow/${id}/versions/${version}/restore-draft`,
     method: 'POST'
   })
 }

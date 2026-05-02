@@ -37,9 +37,10 @@
           <el-table-column prop="docCount" label="文档" width="90" />
           <el-table-column prop="chunkCount" label="切片" width="90" />
           <el-table-column prop="createdAt" label="创建时间" width="170" />
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <div class="action-list">
+                <el-button size="small" text type="primary" @click="openDebug(row)">检索测试</el-button>
                 <el-button size="small" text @click="openEdit(row)">编辑</el-button>
                 <el-button size="small" text type="danger" @click="onDelete(row)">删除</el-button>
               </div>
@@ -78,6 +79,74 @@
         <el-button type="primary" :loading="dialog.saving" @click="onSubmit">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="debugDialog.visible" title="知识库检索测试" width="920px">
+      <div class="debug-head">
+        <div>
+          <div class="debug-title">{{ debugDialog.base?.kbName }}</div>
+          <div class="debug-meta">
+            {{ debugDialog.base?.docCount || 0 }} 个文档 · {{ debugDialog.base?.chunkCount || 0 }} 个切片
+          </div>
+        </div>
+        <el-tag v-if="debugDialog.response" :type="debugStatusType(debugDialog.response.answerStatus)" effect="plain">
+          {{ debugStatusText(debugDialog.response.answerStatus) }}
+        </el-tag>
+      </div>
+
+      <div class="debug-form">
+        <el-input
+          v-model="debugDialog.form.question"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          placeholder="输入一个用户可能会问的问题，例如：如何申请退款？"
+        />
+        <div class="debug-controls">
+          <el-input-number v-model="debugDialog.form.topK" :min="1" :max="10" controls-position="right" />
+          <el-checkbox v-model="debugDialog.form.generateAnswer">生成回答</el-checkbox>
+          <el-button type="primary" :loading="debugDialog.loading" @click="runDebug">开始测试</el-button>
+        </div>
+      </div>
+
+      <template v-if="debugDialog.response">
+        <el-alert
+          v-if="debugDialog.response.error"
+          :title="debugDialog.response.error"
+          :type="debugDialog.response.answerStatus === 'no_hits' ? 'warning' : 'error'"
+          show-icon
+          :closable="false"
+        />
+
+        <div v-if="debugDialog.response.answer" class="debug-answer">
+          <div class="section-title">模型回答</div>
+          <p>{{ debugDialog.response.answer }}</p>
+        </div>
+
+        <el-tabs model-value="chunks" class="debug-tabs">
+          <el-tab-pane label="命中切片" name="chunks">
+            <el-table
+              :data="debugDialog.response.chunks"
+              border
+              stripe
+              max-height="320"
+              empty-text="没有命中切片"
+            >
+              <el-table-column prop="score" label="分数" width="90">
+                <template #default="{ row }">
+                  <span class="num">{{ row.score }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="title" label="来源文档" width="160" show-overflow-tooltip />
+              <el-table-column prop="content" label="切片内容" min-width="420" show-overflow-tooltip />
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="Prompt" name="prompt">
+            <pre class="debug-prompt">{{ debugDialog.response.prompt }}</pre>
+          </el-tab-pane>
+        </el-tabs>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -87,11 +156,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from 'lucide-vue-next'
 import {
   createKnowledgeBase,
+  debugKnowledgeRetrieval,
   deleteKnowledgeBase,
   pageKnowledgeBases,
   updateKnowledgeBase
 } from '@/api/knowledge'
-import type { KnowledgeBase } from '@/api/knowledge'
+import type { KnowledgeBase, KnowledgeRetrievalDebugResponse } from '@/api/knowledge'
 
 const list = ref<KnowledgeBase[]>([])
 const loading = ref(false)
@@ -106,6 +176,17 @@ const dialog = reactive({
     description: '',
     embeddingModel: 'text-embedding-v2'
   }
+})
+const debugDialog = reactive({
+  visible: false,
+  loading: false,
+  base: null as KnowledgeBase | null,
+  form: {
+    question: '',
+    topK: 3,
+    generateAnswer: true
+  },
+  response: null as KnowledgeRetrievalDebugResponse | null
 })
 
 async function fetchList() {
@@ -143,6 +224,34 @@ function openEdit(row: KnowledgeBase) {
   dialog.visible = true
 }
 
+function openDebug(row: KnowledgeBase) {
+  debugDialog.base = row
+  debugDialog.form.question = ''
+  debugDialog.form.topK = 3
+  debugDialog.form.generateAnswer = true
+  debugDialog.response = null
+  debugDialog.visible = true
+}
+
+async function runDebug() {
+  if (!debugDialog.base) return
+  if (!debugDialog.form.question.trim()) {
+    ElMessage.warning('请输入测试问题')
+    return
+  }
+  debugDialog.loading = true
+  try {
+    debugDialog.response = await debugKnowledgeRetrieval({
+      kbId: debugDialog.base.id,
+      question: debugDialog.form.question,
+      topK: debugDialog.form.topK,
+      generateAnswer: debugDialog.form.generateAnswer
+    })
+  } finally {
+    debugDialog.loading = false
+  }
+}
+
 async function onSubmit() {
   if (!dialog.form.kbName.trim()) {
     ElMessage.warning('请填写知识库名称')
@@ -173,6 +282,25 @@ async function onDelete(row: KnowledgeBase) {
   await deleteKnowledgeBase(row.id)
   ElMessage.success('删除成功')
   await fetchList()
+}
+
+function debugStatusText(status: string) {
+  const map: Record<string, string> = {
+    ok: '生成成功',
+    no_hits: '未命中',
+    retrieve_failed: '检索失败',
+    failed: '生成失败',
+    empty: '回答为空',
+    skipped: '仅检索'
+  }
+  return map[status] || status
+}
+
+function debugStatusType(status: string) {
+  if (status === 'ok') return 'success'
+  if (status === 'failed' || status === 'empty' || status === 'retrieve_failed') return 'danger'
+  if (status === 'no_hits') return 'warning'
+  return 'info'
 }
 
 onMounted(fetchList)
@@ -224,8 +352,74 @@ onMounted(fetchList)
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  white-space: nowrap;
   :deep(.el-button) {
     margin-left: 0;
   }
+}
+.debug-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.debug-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+}
+.debug-meta {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.debug-form {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.debug-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.debug-answer {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-neutral-50);
+  p {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    color: var(--color-text);
+  }
+}
+.section-title {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.debug-tabs {
+  margin-top: var(--space-3);
+}
+.debug-prompt {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-neutral-50);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
 }
 </style>
