@@ -29,6 +29,28 @@ export interface KnowledgeDoc {
   createdAt: string
 }
 
+export interface KnowledgeDocParseResponse {
+  title: string
+  content: string
+  sourceFile: string
+  fileType: string
+  charCount: number
+}
+
+export interface KnowledgeChunkPreview {
+  index: number
+  content: string
+  charCount: number
+  tokenCount: number
+}
+
+export interface KnowledgeChunkPreviewResponse {
+  totalCount: number
+  totalChars: number
+  totalTokens: number
+  chunks: KnowledgeChunkPreview[]
+}
+
 export const KB_DOC_STATUS = {
   PENDING: 0,
   INDEXING: 1,
@@ -80,6 +102,64 @@ export interface KnowledgeRetrievalDebugResponse {
   error?: string
   prompt: string
   chunks: KnowledgeRetrievalDebugChunk[]
+}
+
+export interface RagEvalCase {
+  id: number
+  kbId: number
+  kbName: string
+  question: string
+  expectedDocTitle?: string
+  expectedKeywords?: string
+  shouldFallback: boolean
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RagEvalCasePayload {
+  kbId: number
+  question: string
+  expectedDocTitle?: string
+  expectedKeywords?: string
+  shouldFallback: boolean
+  enabled: boolean
+}
+
+export interface RagEvalRun {
+  id: number
+  kbId: number
+  kbName: string
+  topK: number
+  generateAnswer: boolean
+  totalCount: number
+  passedCount: number
+  passRate: number
+  hitRate: number
+  keywordPassRate: number
+  fallbackPassRate: number
+  createdAt: string
+}
+
+export interface RagEvalRunPayload {
+  kbId: number
+  topK: number
+  generateAnswer: boolean
+}
+
+export interface RagEvalResult {
+  id: number
+  runId: number
+  caseId: number
+  question: string
+  retrievedChunks: string
+  answer?: string
+  hitExpectedDoc: boolean
+  keywordPassed: boolean
+  fallbackPassed: boolean
+  passed: boolean
+  failReason?: string
+  createdAt: string
 }
 
 export function pageKnowledgeBases(params: { current?: number; size?: number; keyword?: string }) {
@@ -151,6 +231,24 @@ export function createKnowledgeDoc(data: KnowledgeDocPayload) {
   })
 }
 
+export function parseKnowledgeDocFile(file: File) {
+  const data = new FormData()
+  data.append('file', file)
+  return request<KnowledgeDocParseResponse>({
+    url: '/knowledge/docs/parse-file',
+    method: 'POST',
+    data
+  })
+}
+
+export function previewKnowledgeDocChunks(data: { content: string }) {
+  return request<KnowledgeChunkPreviewResponse>({
+    url: '/knowledge/docs/chunks/preview',
+    method: 'POST',
+    data
+  })
+}
+
 export function updateKnowledgeDoc(id: number | string, data: KnowledgeDocPayload) {
   return request<void>({
     url: `/knowledge/docs/${id}`,
@@ -170,5 +268,59 @@ export function deleteKnowledgeDoc(id: number | string) {
   return request<void>({
     url: `/knowledge/docs/${id}`,
     method: 'DELETE'
+  })
+}
+
+export function pageRagEvalCases(params: { current?: number; size?: number; kbId?: number | ''; keyword?: string }) {
+  return request<PageResult<RagEvalCase>>({
+    url: '/knowledge/eval/cases/page',
+    method: 'GET',
+    params
+  })
+}
+
+export function createRagEvalCase(data: RagEvalCasePayload) {
+  return request<number>({
+    url: '/knowledge/eval/cases',
+    method: 'POST',
+    data
+  })
+}
+
+export function updateRagEvalCase(id: number | string, data: RagEvalCasePayload) {
+  return request<void>({
+    url: `/knowledge/eval/cases/${id}`,
+    method: 'PUT',
+    data
+  })
+}
+
+export function deleteRagEvalCase(id: number | string) {
+  return request<void>({
+    url: `/knowledge/eval/cases/${id}`,
+    method: 'DELETE'
+  })
+}
+
+export function pageRagEvalRuns(params: { current?: number; size?: number; kbId?: number | '' }) {
+  return request<PageResult<RagEvalRun>>({
+    url: '/knowledge/eval/runs/page',
+    method: 'GET',
+    params
+  })
+}
+
+export function runRagEval(data: RagEvalRunPayload) {
+  return request<number>({
+    url: '/knowledge/eval/runs',
+    method: 'POST',
+    data
+  })
+}
+
+export function listRagEvalResults(runId: number | string) {
+  return request<RagEvalResult[]>({
+    url: `/knowledge/eval/runs/${runId}/results`,
+    method: 'GET'
   })
 }

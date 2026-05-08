@@ -61,6 +61,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '知识文档', perms: ['kb:doc:list'] }
       },
       {
+        path: '/knowledge/eval',
+        name: 'RagEval',
+        component: () => import('@/views/knowledge/RagEval.vue'),
+        meta: { title: 'RAG 评估', perms: ['kb:doc:list'] }
+      },
+      {
+        path: '/ai/llm-logs',
+        name: 'LlmLogs',
+        component: () => import('@/views/ai/LlmLogs.vue'),
+        meta: { title: 'LLM 日志', perms: ['kb:doc:list'] }
+      },
+      {
         path: '/system/user',
         name: 'UserManage',
         component: () => import('@/views/system/UserManage.vue'),
@@ -77,6 +89,12 @@ const routes: RouteRecordRaw[] = [
         name: 'MenuManage',
         component: () => import('@/views/system/MenuManage.vue'),
         meta: { title: '菜单管理', perms: ['system:menu:list'] }
+      },
+      {
+        path: '/system/audit',
+        name: 'OperationAudit',
+        component: () => import('@/views/system/OperationAudit.vue'),
+        meta: { title: '操作审计', perms: ['system:audit:list'] }
       }
     ]
   },

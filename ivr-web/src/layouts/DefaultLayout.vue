@@ -88,7 +88,7 @@ import { useUserStore } from '@/stores/user'
 import { ElMessageBox } from 'element-plus'
 import {
   Phone, Home, Workflow, Users, ShieldCheck, Menu, PhoneCall, ListChecks,
-  ChevronDown, LogOut, BookOpen, FileText
+  ChevronDown, LogOut, BookOpen, FileText, Activity, ClipboardList
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -104,9 +104,12 @@ const group1 = [
 const group2 = [
   { path: '/knowledge/base', label: '知识库', icon: BookOpen, perm: 'kb:base:list' },
   { path: '/knowledge/doc', label: '知识文档', icon: FileText, perm: 'kb:doc:list' },
+  { path: '/knowledge/eval', label: 'RAG评估', icon: ListChecks, perm: 'kb:doc:list' },
+  { path: '/ai/llm-logs', label: 'LLM日志', icon: Activity, perm: 'kb:doc:list' },
   { path: '/system/user', label: '用户管理', icon: Users, perm: 'system:user:list' },
   { path: '/system/role', label: '角色管理', icon: ShieldCheck, perm: 'system:role:list' },
-  { path: '/system/menu', label: '菜单管理', icon: Menu, perm: 'system:menu:list' }
+  { path: '/system/menu', label: '菜单管理', icon: Menu, perm: 'system:menu:list' },
+  { path: '/system/audit', label: '操作审计', icon: ClipboardList, perm: 'system:audit:list' }
 ]
 
 const visibleGroup1 = computed(() => group1.filter((item) => userStore.hasPerm(item.perm)))

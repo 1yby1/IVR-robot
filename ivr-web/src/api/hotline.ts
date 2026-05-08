@@ -7,6 +7,10 @@ export interface HotlineItem {
   flowCode: string
   flowName: string
   flowVersion: number
+  flowStatus: number
+  flowCurrentVersion: number
+  healthStatus: 'ok' | 'disabled' | 'danger'
+  healthMessage: string
   enabled: number
   remark?: string
   createdAt: string
@@ -24,6 +28,25 @@ export interface HotlinePayload {
   hotline: string
   flowId: number
   remark?: string
+}
+
+export interface HotlineImpactItem {
+  id: number
+  hotline: string
+  enabled: number
+  remark?: string
+}
+
+export interface HotlineImpactResponse {
+  flowId: number
+  flowCode: string
+  flowName: string
+  flowStatus: number
+  currentVersion: number
+  nextVersion: number
+  hotlineCount: number
+  enabledHotlineCount: number
+  hotlines: HotlineImpactItem[]
 }
 
 export function pageHotlines(params: { current?: number; size?: number; keyword?: string }) {
@@ -62,5 +85,12 @@ export function deleteHotline(id: number | string) {
   return request<void>({
     url: `/robot/hotline/${id}`,
     method: 'DELETE'
+  })
+}
+
+export function getFlowHotlineImpact(flowId: number | string) {
+  return request<HotlineImpactResponse>({
+    url: `/robot/hotline/flow/${flowId}/impact`,
+    method: 'GET'
   })
 }

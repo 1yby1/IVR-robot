@@ -340,7 +340,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, h, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from 'lucide-vue-next'
@@ -356,6 +356,8 @@ import {
   startFlowDebug
 } from '@/api/flow'
 import type { FlowDebugResponse, FlowHealthResponse, FlowItem, FlowVersionItem } from '@/api/flow'
+import { getFlowHotlineImpact } from '@/api/hotline'
+import type { HotlineImpactResponse } from '@/api/hotline'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -477,17 +479,15 @@ async function onHealth(row: FlowItem) {
   }
 }
 async function onPublish(row: FlowItem) {
-  await ElMessageBox.confirm(`确定发布「${row.flowName}」吗？发布后立即生效。`, '确认发布', {
-    type: 'warning'
-  })
+  const impact = await getFlowHotlineImpact(row.id)
+  await confirmPublishImpact(row, impact)
   await publishFlow(row.id)
   ElMessage.success('发布成功')
   await fetchList()
 }
 async function onOffline(row: FlowItem) {
-  await ElMessageBox.confirm(`确定下线「${row.flowName}」吗？下线后热线不能再绑定这个流程。`, '确认下线', {
-    type: 'warning'
-  })
+  const impact = await getFlowHotlineImpact(row.id)
+  await confirmOfflineImpact(row, impact)
   await offlineFlow(row.id)
   ElMessage.success('下线成功')
   await fetchList()
@@ -611,6 +611,58 @@ function nodeLevelLabel(level: string) {
 function rateText(value?: number) {
   if (value === undefined || value === null) return '-'
   return `${Math.round(value * 100)}%`
+}
+
+function confirmPublishImpact(row: FlowItem, impact: HotlineImpactResponse) {
+  const lines = [
+    `确定发布「${row.flowName}」为 v${impact.nextVersion} 吗？`,
+    impact.enabledHotlineCount > 0
+      ? `${impact.enabledHotlineCount} 条启用热线会立即使用新发布版本。`
+      : '当前没有启用热线会立即切到这个版本。',
+    impactHotlinePreview(impact)
+  ]
+  return ElMessageBox.confirm(renderImpactMessage(lines), '发布影响提示', {
+    type: 'warning',
+    confirmButtonText: '继续发布',
+    cancelButtonText: '取消'
+  })
+}
+
+function confirmOfflineImpact(row: FlowItem, impact: HotlineImpactResponse) {
+  const lines = [
+    `确定下线「${row.flowName}」吗？`,
+    impact.enabledHotlineCount > 0
+      ? `${impact.enabledHotlineCount} 条启用热线会无法进入该流程，来电会被拒绝。`
+      : '当前没有启用热线会被影响。',
+    impactHotlinePreview(impact)
+  ]
+  return ElMessageBox.confirm(renderImpactMessage(lines), '下线影响提示', {
+    type: 'warning',
+    confirmButtonText: '继续下线',
+    cancelButtonText: '取消'
+  })
+}
+
+function impactHotlinePreview(impact: HotlineImpactResponse) {
+  if (impact.hotlineCount <= 0) {
+    return '绑定热线：0 条'
+  }
+  const enabledHotlines = impact.hotlines
+    .filter((item) => item.enabled === 1)
+    .slice(0, 5)
+    .map((item) => item.hotline)
+  if (!enabledHotlines.length) {
+    return `绑定热线：${impact.hotlineCount} 条，启用 0 条`
+  }
+  const suffix = impact.enabledHotlineCount > enabledHotlines.length ? ' 等' : ''
+  return `绑定热线：${impact.hotlineCount} 条，启用 ${impact.enabledHotlineCount} 条（${enabledHotlines.join('、')}${suffix}）`
+}
+
+function renderImpactMessage(lines: string[]) {
+  return h(
+    'div',
+    lines.map((line) => h('p', { style: 'margin: 0 0 6px; line-height: 1.5;' }, line))
+  )
 }
 
 onMounted(fetchList)

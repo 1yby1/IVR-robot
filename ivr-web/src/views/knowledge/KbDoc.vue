@@ -6,10 +6,23 @@
           <h2>知识文档</h2>
           <p class="panel-sub">录入文档后自动生成 RAG 检索切片</p>
         </div>
-        <el-button type="primary" @click="openCreate">
-          <Plus :size="14" :stroke-width="2" style="margin-right: 4px" />
-          新建文档
-        </el-button>
+        <div class="head-actions">
+          <input
+            ref="fileInputRef"
+            class="hidden-file"
+            type="file"
+            accept=".txt,.md,.markdown,.csv,.json,.log,.xml,.html,.htm,.docx"
+            @change="onFileChange"
+          />
+          <el-button :loading="fileParsing" @click="triggerUpload">
+            <Upload :size="14" :stroke-width="2" style="margin-right: 4px" />
+            上传解析
+          </el-button>
+          <el-button type="primary" @click="openCreate">
+            <Plus :size="14" :stroke-width="2" style="margin-right: 4px" />
+            新建文档
+          </el-button>
+        </div>
       </header>
 
       <div class="panel-body">
@@ -43,10 +56,11 @@
           </el-table-column>
           <el-table-column prop="chunkCount" label="切片" width="80" />
           <el-table-column prop="createdAt" label="创建时间" width="170" />
-          <el-table-column label="操作" width="220" fixed="right">
+          <el-table-column label="操作" width="300" fixed="right">
             <template #default="{ row }">
               <div class="action-list">
                 <el-button size="small" text @click="openEdit(row)">编辑</el-button>
+                <el-button size="small" text type="primary" @click="previewRowChunks(row)">切片预览</el-button>
                 <el-button size="small" text type="primary" @click="onReindex(row)">重建索引</el-button>
                 <el-button size="small" text type="danger" @click="onDelete(row)">删除</el-button>
               </div>
@@ -96,8 +110,33 @@
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
+        <el-button :loading="chunkDialog.loading" @click="previewCurrentChunks">
+          <Scissors :size="14" :stroke-width="2" style="margin-right: 4px" />
+          预览切片
+        </el-button>
         <el-button type="primary" :loading="dialog.saving" @click="onSubmit">保存并索引</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="chunkDialog.visible" :title="chunkDialog.title" width="920px">
+      <div v-if="chunkDialog.data" class="chunk-summary">
+        <span>切片 {{ chunkDialog.data.totalCount || 0 }}</span>
+        <span>字符 {{ chunkDialog.data.totalChars || 0 }}</span>
+        <span>Token {{ chunkDialog.data.totalTokens || 0 }}</span>
+      </div>
+      <el-table
+        :data="chunkDialog.data?.chunks || []"
+        v-loading="chunkDialog.loading"
+        border
+        stripe
+        max-height="520"
+        empty-text="暂无切片"
+      >
+        <el-table-column prop="index" label="#" width="70" />
+        <el-table-column prop="charCount" label="字符" width="90" />
+        <el-table-column prop="tokenCount" label="Token" width="90" />
+        <el-table-column prop="content" label="切片内容" min-width="520" show-overflow-tooltip />
+      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -105,22 +144,26 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from 'lucide-vue-next'
+import { Plus, Scissors, Upload } from 'lucide-vue-next'
 import {
   createKnowledgeDoc,
   deleteKnowledgeDoc,
   getKnowledgeDoc,
   listKnowledgeBaseOptions,
   pageKnowledgeDocs,
+  parseKnowledgeDocFile,
+  previewKnowledgeDocChunks,
   reindexKnowledgeDoc,
   updateKnowledgeDoc,
   KB_DOC_STATUS
 } from '@/api/knowledge'
-import type { KnowledgeBaseOption, KnowledgeDoc } from '@/api/knowledge'
+import type { KnowledgeBaseOption, KnowledgeChunkPreviewResponse, KnowledgeDoc } from '@/api/knowledge'
 
 const list = ref<KnowledgeDoc[]>([])
 const baseOptions = ref<KnowledgeBaseOption[]>([])
 const loading = ref(false)
+const fileParsing = ref(false)
+const fileInputRef = ref<HTMLInputElement>()
 const filters = reactive({ kbId: '' as number | '', keyword: '' })
 const pagination = ref({ current: 1, size: 10, total: 0 })
 const dialog = reactive({
@@ -134,6 +177,12 @@ const dialog = reactive({
     sourceFile: '',
     fileType: 'txt'
   }
+})
+const chunkDialog = reactive({
+  visible: false,
+  loading: false,
+  title: '切片预览',
+  data: null as KnowledgeChunkPreviewResponse | null
 })
 
 async function fetchOptions() {
@@ -164,13 +213,41 @@ async function reload() {
 function openCreate() {
   dialog.form = {
     id: 0,
-    kbId: baseOptions.value[0]?.id,
+    kbId: filters.kbId || baseOptions.value[0]?.id,
     title: '',
     content: '',
     sourceFile: '',
     fileType: 'txt'
   }
   dialog.visible = true
+}
+
+function triggerUpload() {
+  fileInputRef.value?.click()
+}
+
+async function onFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  fileParsing.value = true
+  try {
+    const parsed = await parseKnowledgeDocFile(file)
+    dialog.form = {
+      id: 0,
+      kbId: filters.kbId || baseOptions.value[0]?.id,
+      title: parsed.title,
+      content: parsed.content,
+      sourceFile: parsed.sourceFile,
+      fileType: parsed.fileType || 'txt'
+    }
+    dialog.visible = true
+    ElMessage.success(`解析成功：${parsed.charCount || 0} 字`)
+  } finally {
+    fileParsing.value = false
+  }
 }
 
 async function openEdit(row: KnowledgeDoc) {
@@ -214,6 +291,35 @@ async function onSubmit() {
     await fetchList()
   } finally {
     dialog.saving = false
+  }
+}
+
+async function previewCurrentChunks() {
+  if (!dialog.form.content.trim()) {
+    ElMessage.warning('请先填写或上传文档内容')
+    return
+  }
+  await openChunkPreview(dialog.form.content, dialog.form.title || '切片预览')
+}
+
+async function previewRowChunks(row: KnowledgeDoc) {
+  const detail = await getKnowledgeDoc(row.id)
+  if (!detail.content?.trim()) {
+    ElMessage.warning('文档内容为空')
+    return
+  }
+  await openChunkPreview(detail.content, detail.title)
+}
+
+async function openChunkPreview(content: string, title: string) {
+  chunkDialog.title = `切片预览 · ${title}`
+  chunkDialog.visible = true
+  chunkDialog.loading = true
+  chunkDialog.data = null
+  try {
+    chunkDialog.data = await previewKnowledgeDocChunks({ content })
+  } finally {
+    chunkDialog.loading = false
   }
 }
 
@@ -274,9 +380,16 @@ onMounted(async () => {
   }
 }
 .panel-body { padding: var(--space-4); }
+.head-actions,
 .table-tools {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+}
+.hidden-file {
+  display: none;
+}
+.table-tools {
   margin-bottom: var(--space-3);
 }
 .pager {
@@ -297,5 +410,12 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
+}
+.chunk-summary {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 </style>

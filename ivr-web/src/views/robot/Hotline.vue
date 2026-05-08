@@ -50,6 +50,16 @@
               <el-tag v-else type="info" effect="plain" size="small">停用</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="绑定健康" min-width="210" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="health-cell">
+                <el-tag :type="healthTagType(row.healthStatus)" effect="plain" size="small">
+                  {{ healthLabel(row.healthStatus) }}
+                </el-tag>
+                <span>{{ row.healthMessage || '-' }}</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
           <el-table-column prop="updatedAt" label="更新时间" width="170" />
           <el-table-column label="操作" width="220" fixed="right">
@@ -263,6 +273,18 @@ async function onDelete(row: HotlineItem) {
   await fetchList()
 }
 
+function healthTagType(status: HotlineItem['healthStatus']) {
+  if (status === 'ok') return 'success'
+  if (status === 'disabled') return 'info'
+  return 'danger'
+}
+
+function healthLabel(status: HotlineItem['healthStatus']) {
+  if (status === 'ok') return '正常'
+  if (status === 'disabled') return '停用'
+  return '异常'
+}
+
 onMounted(async () => {
   await Promise.all([fetchList(), fetchFlowOptions()])
 })
@@ -317,6 +339,18 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+}
+.health-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 .num {
   font-variant-numeric: tabular-nums;
