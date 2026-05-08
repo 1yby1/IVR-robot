@@ -64,7 +64,8 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, perm
 -- 系统管理
 (501, 500, '用户管理',       2, 'user',      'system/UserManage',     'system:user:list',       'User',     1),
 (502, 500, '角色管理',       2, 'role',      'system/RoleManage',     'system:role:list',       'UserFilled', 2),
-(503, 500, '菜单管理',       2, 'menu',      'system/MenuManage',     'system:menu:list',       'Menu',     3);
+(503, 500, '菜单管理',       2, 'menu',      'system/MenuManage',     'system:menu:list',       'Menu',     3),
+(504, 500, '操作审计',       2, 'audit',     'system/OperationAudit', 'system:audit:list',      'Tickets',  4);
 
 -- admin 角色 => 所有菜单
 INSERT INTO sys_role_menu (role_id, menu_id)

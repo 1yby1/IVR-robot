@@ -1,6 +1,7 @@
 package com.ivr.admin.controller;
 
 import com.ivr.admin.dto.HotlineListItem;
+import com.ivr.admin.dto.HotlineImpactResponse;
 import com.ivr.admin.dto.HotlineRequest;
 import com.ivr.admin.dto.HotlineStatusRequest;
 import com.ivr.admin.dto.PageResult;
@@ -25,6 +26,11 @@ public class HotlineAdminController {
                                                @RequestParam(defaultValue = "10") int size,
                                                @RequestParam(required = false) String keyword) {
         return R.ok(hotlineAdminService.page(current, size, keyword));
+    }
+
+    @GetMapping("/flow/{flowId}/impact")
+    public R<HotlineImpactResponse> flowImpact(@PathVariable Long flowId) {
+        return R.ok(hotlineAdminService.flowImpact(flowId));
     }
 
     @PostMapping

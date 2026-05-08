@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.toolkit.Db;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ivr.admin.dto.KnowledgeBaseRequest;
+import com.ivr.admin.dto.KnowledgeChunkPreviewResponse;
+import com.ivr.admin.dto.KnowledgeDocParseResponse;
 import com.ivr.admin.dto.KnowledgeDocRequest;
 import com.ivr.admin.dto.KnowledgeRetrievalDebugRequest;
 import com.ivr.admin.dto.KnowledgeRetrievalDebugResponse;
@@ -26,7 +28,12 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -36,6 +43,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class KnowledgeAdminService {
@@ -45,6 +54,8 @@ public class KnowledgeAdminService {
     private static final int CHUNK_MAX_CHARS = 500;
     private static final int CHUNK_OVERLAP_CHARS = 80;
     private static final int LIST_CONTENT_SNIPPET_CHARS = 120;
+    private static final int MAX_PARSED_CONTENT_CHARS = 200000;
+    private static final int MAX_PARSE_FILE_BYTES = 5 * 1024 * 1024;
     private static final String DEFAULT_RAG_TEMPLATE = """
             你是客服助手，必须严格依据下方资料回答客户问题。资料中没有答案时直接回答「抱歉，这个问题需要人工帮您处理，正在为您转接」。
             资料：
@@ -233,6 +244,68 @@ public class KnowledgeAdminService {
         return response;
     }
 
+    public KnowledgeDocParseResponse parseDocFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(400, "请选择要上传的文件");
+        }
+        if (file.getSize() > MAX_PARSE_FILE_BYTES) {
+            throw new BusinessException(400, "文件过大，当前 MVP 最多支持 5MB 文本解析");
+        }
+        String sourceFile = Objects.toString(StringUtils.getFilename(file.getOriginalFilename()), "");
+        String fileType = extension(sourceFile);
+        String content;
+        try {
+            byte[] bytes = file.getBytes();
+            content = switch (fileType) {
+                case "txt", "md", "markdown", "csv", "json", "log", "xml" -> decodeText(bytes);
+                case "html", "htm" -> stripHtml(decodeText(bytes));
+                case "docx" -> parseDocx(bytes);
+                case "pdf" -> throw new BusinessException(400, "PDF 解析需要额外引入 PDF 解析库，这版 MVP 暂不支持");
+                case "doc" -> throw new BusinessException(400, "旧版 .doc 解析需要额外组件，请先另存为 .docx 或 .txt");
+                default -> throw new BusinessException(400, "暂不支持该文件类型，请上传 txt、md、csv、json、html、xml 或 docx");
+            };
+        } catch (BusinessException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new BusinessException(400, "文件读取失败：" + diagnostic(e));
+        }
+        content = normalizeParsedText(content);
+        if (!StringUtils.hasText(content)) {
+            throw new BusinessException(400, "文件内容为空，无法生成知识文档");
+        }
+        if (content.length() > MAX_PARSED_CONTENT_CHARS) {
+            throw new BusinessException(400, "解析后内容超过 20 万字符，请先拆分文档");
+        }
+
+        KnowledgeDocParseResponse response = new KnowledgeDocParseResponse();
+        response.setTitle(defaultTitle(sourceFile));
+        response.setContent(content);
+        response.setSourceFile(sourceFile);
+        response.setFileType(fileType);
+        response.setCharCount(content.length());
+        return response;
+    }
+
+    public KnowledgeChunkPreviewResponse previewChunks(String content) {
+        List<String> parts = splitContent(content);
+        KnowledgeChunkPreviewResponse response = new KnowledgeChunkPreviewResponse();
+        response.setTotalCount(parts.size());
+        response.setTotalChars(Objects.toString(content, "").length());
+        response.setTotalTokens(parts.stream().mapToInt(this::estimateTokenCount).sum());
+        List<KnowledgeChunkPreviewResponse.Chunk> chunks = new ArrayList<>(parts.size());
+        for (int i = 0; i < parts.size(); i++) {
+            String part = parts.get(i);
+            KnowledgeChunkPreviewResponse.Chunk chunk = new KnowledgeChunkPreviewResponse.Chunk();
+            chunk.setIndex(i);
+            chunk.setContent(part);
+            chunk.setCharCount(part.length());
+            chunk.setTokenCount(estimateTokenCount(part));
+            chunks.add(chunk);
+        }
+        response.setChunks(chunks);
+        return response;
+    }
+
     public Long createDoc(KnowledgeDocRequest request) {
         requiredBase(request.getKbId());
         KbDoc doc = new KbDoc();
@@ -374,6 +447,79 @@ public class KnowledgeAdminService {
 
     private int estimateTokenCount(String text) {
         return Math.max(1, Objects.toString(text, "").length() / 2);
+    }
+
+    private String extension(String filename) {
+        int idx = filename == null ? -1 : filename.lastIndexOf('.');
+        if (idx < 0 || idx == filename.length() - 1) {
+            return "txt";
+        }
+        return filename.substring(idx + 1).trim().toLowerCase();
+    }
+
+    private String defaultTitle(String filename) {
+        String text = StringUtils.hasText(filename) ? filename : "未命名文档";
+        int idx = text.lastIndexOf('.');
+        return idx > 0 ? text.substring(0, idx) : text;
+    }
+
+    private String decodeText(byte[] bytes) {
+        if (bytes.length >= 3
+                && (bytes[0] & 0xff) == 0xef
+                && (bytes[1] & 0xff) == 0xbb
+                && (bytes[2] & 0xff) == 0xbf) {
+            return new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
+        }
+        String utf8 = new String(bytes, StandardCharsets.UTF_8);
+        long replacements = utf8.chars().filter(ch -> ch == '\uFFFD').count();
+        if (replacements > 0 && replacements > Math.max(2, utf8.length() / 100)) {
+            return new String(bytes, Charset.forName("GB18030"));
+        }
+        return utf8;
+    }
+
+    private String parseDocx(byte[] bytes) throws IOException {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if ("word/document.xml".equals(entry.getName())) {
+                    String xml = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
+                    xml = xml.replaceAll("</w:p>", "\n");
+                    xml = xml.replaceAll("</w:tr>", "\n");
+                    xml = xml.replaceAll("<[^>]+>", "");
+                    return unescapeXml(xml);
+                }
+            }
+        }
+        throw new BusinessException(400, "未找到 docx 正文内容");
+    }
+
+    private String stripHtml(String html) {
+        String text = html.replaceAll("(?is)<script.*?</script>", "")
+                .replaceAll("(?is)<style.*?</style>", "")
+                .replaceAll("(?i)<br\\s*/?>", "\n")
+                .replaceAll("(?i)</p>", "\n")
+                .replaceAll("<[^>]+>", "");
+        return unescapeXml(text);
+    }
+
+    private String unescapeXml(String text) {
+        return text.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&apos;", "'");
+    }
+
+    private String normalizeParsedText(String text) {
+        return Objects.toString(text, "")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replace('\u00A0', ' ')
+                .lines()
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining("\n"));
     }
 
     private KbBase requiredBase(Long id) {

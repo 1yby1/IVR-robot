@@ -65,8 +65,11 @@ public class PermissionInterceptor implements HandlerInterceptor {
 
     private void registerRules() {
         rules.add(new Rule(HttpMethod.GET.name(), "/dashboard/overview", "robot:home:view"));
+        rules.add(new Rule(HttpMethod.GET.name(), "/robot/hotline/flow/*/impact", "flow:list|flow:publish|robot:hotline:list"));
         rules.add(new Rule(null, "/robot/hotline/**", "robot:hotline:list"));
         rules.add(new Rule(null, "/robot/call/**", "robot:call:list"));
+
+        rules.add(new Rule(HttpMethod.GET.name(), "/system/audit/**", "system:audit:list"));
 
         rules.add(new Rule(HttpMethod.GET.name(), "/flow/page", "flow:list"));
         rules.add(new Rule(HttpMethod.GET.name(), "/flow/*/versions", "flow:list"));
@@ -88,11 +91,22 @@ public class PermissionInterceptor implements HandlerInterceptor {
         rules.add(new Rule(HttpMethod.DELETE.name(), "/knowledge/bases/*", "kb:base:delete"));
 
         rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/debug/retrieval", "kb:doc:list"));
+        rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/eval/cases/page", "kb:doc:list"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/eval/cases", "kb:doc:add"));
+        rules.add(new Rule(HttpMethod.PUT.name(), "/knowledge/eval/cases/*", "kb:doc:edit"));
+        rules.add(new Rule(HttpMethod.DELETE.name(), "/knowledge/eval/cases/*", "kb:doc:delete"));
+        rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/eval/runs/page", "kb:doc:list"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/eval/runs", "kb:doc:list"));
+        rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/eval/runs/*/results", "kb:doc:list"));
         rules.add(new Rule(HttpMethod.GET.name(), "/knowledge/docs/**", "kb:doc:list"));
         rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs/*/reindex", "kb:doc:reindex"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs/parse-file", "kb:doc:add|kb:doc:edit"));
+        rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs/chunks/preview", "kb:doc:list"));
         rules.add(new Rule(HttpMethod.POST.name(), "/knowledge/docs", "kb:doc:add"));
         rules.add(new Rule(HttpMethod.PUT.name(), "/knowledge/docs/*", "kb:doc:edit"));
         rules.add(new Rule(HttpMethod.DELETE.name(), "/knowledge/docs/*", "kb:doc:delete"));
+
+        rules.add(new Rule(HttpMethod.GET.name(), "/ai/llm/logs/**", "kb:doc:list"));
 
         rules.add(new Rule(null, "/system/user/**", "system:user:list"));
         rules.add(new Rule(null, "/system/role/**", "system:role:list"));

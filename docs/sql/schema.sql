@@ -77,6 +77,32 @@ CREATE TABLE sys_role_menu (
   PRIMARY KEY(role_id, menu_id)
 ) ENGINE=InnoDB COMMENT='角色-菜单关联';
 
+DROP TABLE IF EXISTS operation_audit_log;
+CREATE TABLE operation_audit_log (
+  id             BIGINT        PRIMARY KEY AUTO_INCREMENT,
+  user_id        BIGINT,
+  username       VARCHAR(64),
+  nickname       VARCHAR(64),
+  module_name    VARCHAR(64)   NOT NULL COMMENT '业务模块',
+  operation_type VARCHAR(64)   NOT NULL COMMENT 'create/update/delete/publish/offline',
+  operation_name VARCHAR(128)  NOT NULL COMMENT '展示名称',
+  request_method VARCHAR(16)   NOT NULL,
+  request_uri    VARCHAR(255)  NOT NULL,
+  query_params   VARCHAR(2000),
+  request_body   TEXT,
+  ip             VARCHAR(64),
+  user_agent     VARCHAR(500),
+  status         VARCHAR(16)   NOT NULL COMMENT 'success/failed',
+  result_code    INT,
+  error_message  VARCHAR(2000),
+  latency_ms     BIGINT        DEFAULT 0,
+  created_at     DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_created(created_at),
+  INDEX idx_user_created(user_id, created_at),
+  INDEX idx_module_created(module_name, created_at),
+  INDEX idx_status_created(status, created_at)
+) ENGINE=InnoDB COMMENT='后台操作审计日志';
+
 -- ==============================
 -- IVR 流程
 -- ==============================
@@ -208,6 +234,81 @@ CREATE TABLE kb_chunk (
   INDEX idx_doc(doc_id),
   INDEX idx_kb(kb_id)
 ) ENGINE=InnoDB COMMENT='知识切片';
+
+DROP TABLE IF EXISTS rag_eval_result;
+DROP TABLE IF EXISTS rag_eval_run;
+DROP TABLE IF EXISTS rag_eval_case;
+
+CREATE TABLE rag_eval_case (
+  id                 BIGINT       PRIMARY KEY AUTO_INCREMENT,
+  kb_id              BIGINT       NOT NULL,
+  question           VARCHAR(1000) NOT NULL COMMENT '测试问题',
+  expected_doc_title VARCHAR(255) COMMENT '期望命中的文档标题关键字',
+  expected_keywords  VARCHAR(1000) COMMENT '期望回答包含的关键词，逗号或换行分隔',
+  should_fallback    TINYINT      DEFAULT 0 COMMENT '1期望未命中并走兜底',
+  enabled            TINYINT      DEFAULT 1,
+  created_at         DATETIME     DEFAULT CURRENT_TIMESTAMP,
+  updated_at         DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_kb(kb_id),
+  INDEX idx_enabled(enabled)
+) ENGINE=InnoDB COMMENT='RAG 评估用例';
+
+CREATE TABLE rag_eval_run (
+  id                 BIGINT   PRIMARY KEY AUTO_INCREMENT,
+  kb_id              BIGINT   NOT NULL,
+  top_k              INT      DEFAULT 3,
+  generate_answer    TINYINT  DEFAULT 1 COMMENT '1检索后生成回答，0只评估检索',
+  total_count        INT      DEFAULT 0,
+  passed_count       INT      DEFAULT 0,
+  pass_rate          INT      DEFAULT 0 COMMENT '整体通过率，0-100',
+  hit_rate           INT      DEFAULT 0 COMMENT '期望文档命中率，0-100',
+  keyword_pass_rate  INT      DEFAULT 0 COMMENT '回答关键词通过率，0-100',
+  fallback_pass_rate INT      DEFAULT 0 COMMENT 'fallback 通过率，0-100',
+  created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_kb_created(kb_id, created_at)
+) ENGINE=InnoDB COMMENT='RAG 评估批次';
+
+CREATE TABLE rag_eval_result (
+  id               BIGINT        PRIMARY KEY AUTO_INCREMENT,
+  run_id           BIGINT        NOT NULL,
+  case_id          BIGINT        NOT NULL,
+  question         VARCHAR(1000) NOT NULL,
+  retrieved_chunks LONGTEXT COMMENT '本次检索命中的切片 JSON',
+  answer           TEXT COMMENT '模型生成回答',
+  hit_expected_doc TINYINT DEFAULT 0,
+  keyword_passed   TINYINT DEFAULT 0,
+  fallback_passed  TINYINT DEFAULT 0,
+  passed           TINYINT DEFAULT 0,
+  fail_reason      VARCHAR(1000),
+  created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_run(run_id),
+  INDEX idx_case(case_id)
+) ENGINE=InnoDB COMMENT='RAG 评估结果';
+
+DROP TABLE IF EXISTS llm_call_log;
+CREATE TABLE llm_call_log (
+  id                BIGINT        PRIMARY KEY AUTO_INCREMENT,
+  trace_id          VARCHAR(64)   NOT NULL COMMENT '单次 LLM 调用追踪 ID',
+  scene             VARCHAR(64)   NOT NULL COMMENT '调用场景：chat/chat_template/intent_detect',
+  provider          VARCHAR(64)   DEFAULT 'spring-ai',
+  model             VARCHAR(128),
+  status            VARCHAR(16)   NOT NULL COMMENT 'success/failed',
+  prompt_tokens     INT           DEFAULT 0 COMMENT '输入 token',
+  completion_tokens INT           DEFAULT 0 COMMENT '输出 token',
+  total_tokens      INT           DEFAULT 0,
+  token_estimated   TINYINT       DEFAULT 0 COMMENT '1表示 provider 未返回 usage，由系统粗估',
+  prompt_chars      INT           DEFAULT 0,
+  response_chars    INT           DEFAULT 0,
+  latency_ms        BIGINT        DEFAULT 0 COMMENT '从请求模型到返回/失败的耗时',
+  error_message     VARCHAR(1000),
+  prompt_preview    TEXT,
+  response_preview  TEXT,
+  created_at        DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_created(created_at),
+  INDEX idx_scene_created(scene, created_at),
+  INDEX idx_status_created(status, created_at),
+  INDEX idx_trace(trace_id)
+) ENGINE=InnoDB COMMENT='LLM 调用日志';
 
 -- ==============================
 -- 通话数据

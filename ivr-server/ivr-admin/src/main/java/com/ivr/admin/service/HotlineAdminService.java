@@ -2,6 +2,7 @@ package com.ivr.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ivr.admin.dto.HotlineImpactResponse;
 import com.ivr.admin.dto.HotlineListItem;
 import com.ivr.admin.dto.PageResult;
 import com.ivr.admin.entity.IvrFlow;
@@ -113,6 +114,33 @@ public class HotlineAdminService {
         }
     }
 
+    public HotlineImpactResponse flowImpact(Long flowId) {
+        IvrFlow flow = flowMapper.selectById(flowId);
+        if (flow == null || Objects.equals(flow.getDeleted(), 1)) {
+            throw new BusinessException(404, "流程不存在");
+        }
+
+        List<IvrHotline> hotlines = hotlineMapper.selectList(new LambdaQueryWrapper<IvrHotline>()
+                .eq(IvrHotline::getFlowId, flowId)
+                .orderByDesc(IvrHotline::getEnabled)
+                .orderByAsc(IvrHotline::getHotline));
+
+        HotlineImpactResponse response = new HotlineImpactResponse();
+        Integer currentVersion = Objects.requireNonNullElse(flow.getCurrentVersion(), 0);
+        response.setFlowId(flow.getId());
+        response.setFlowCode(flow.getFlowCode());
+        response.setFlowName(flow.getFlowName());
+        response.setFlowStatus(Objects.requireNonNullElse(flow.getStatus(), 0));
+        response.setCurrentVersion(currentVersion);
+        response.setNextVersion(currentVersion + 1);
+        response.setHotlineCount(hotlines.size());
+        response.setEnabledHotlineCount((int) hotlines.stream()
+                .filter(item -> Objects.equals(item.getEnabled(), 1))
+                .count());
+        response.setHotlines(hotlines.stream().map(this::toImpactHotline).toList());
+        return response;
+    }
+
     private IvrHotline getRequired(Long id) {
         IvrHotline entity = hotlineMapper.selectById(id);
         if (entity == null) {
@@ -142,17 +170,55 @@ public class HotlineAdminService {
 
     private HotlineListItem toListItem(IvrHotline hotline, IvrFlow flow) {
         HotlineListItem item = new HotlineListItem();
+        Integer currentVersion = flow == null ? 0 : Objects.requireNonNullElse(flow.getCurrentVersion(), 0);
         item.setId(hotline.getId());
         item.setHotline(hotline.getHotline());
         item.setFlowId(hotline.getFlowId());
         item.setFlowCode(flow == null ? "" : flow.getFlowCode());
         item.setFlowName(flow == null ? "流程不存在" : flow.getFlowName());
-        item.setFlowVersion(flow == null ? 0 : flow.getCurrentVersion());
+        item.setFlowVersion(currentVersion);
+        item.setFlowStatus(flow == null ? 0 : Objects.requireNonNullElse(flow.getStatus(), 0));
+        item.setFlowCurrentVersion(currentVersion);
+        fillHealth(item, hotline, flow);
         item.setEnabled(hotline.getEnabled());
         item.setRemark(hotline.getRemark());
         item.setCreatedAt(formatTime(hotline.getCreatedAt()));
         item.setUpdatedAt(formatTime(hotline.getUpdatedAt()));
         return item;
+    }
+
+    private void fillHealth(HotlineListItem item, IvrHotline hotline, IvrFlow flow) {
+        if (!Objects.equals(hotline.getEnabled(), 1)) {
+            item.setHealthStatus("disabled");
+            item.setHealthMessage("热线已停用，不会接入来电");
+            return;
+        }
+        if (flow == null || Objects.equals(flow.getDeleted(), 1)) {
+            item.setHealthStatus("danger");
+            item.setHealthMessage("绑定流程不存在，来电会被拒绝");
+            return;
+        }
+        if (!Objects.equals(flow.getStatus(), 1)) {
+            item.setHealthStatus("danger");
+            item.setHealthMessage("绑定流程未发布或已下线，来电会被拒绝");
+            return;
+        }
+        if (Objects.requireNonNullElse(flow.getCurrentVersion(), 0) <= 0) {
+            item.setHealthStatus("danger");
+            item.setHealthMessage("绑定流程没有可运行版本");
+            return;
+        }
+        item.setHealthStatus("ok");
+        item.setHealthMessage("绑定正常，来电会进入当前发布版本");
+    }
+
+    private HotlineImpactResponse.HotlineRef toImpactHotline(IvrHotline hotline) {
+        HotlineImpactResponse.HotlineRef ref = new HotlineImpactResponse.HotlineRef();
+        ref.setId(hotline.getId());
+        ref.setHotline(hotline.getHotline());
+        ref.setEnabled(hotline.getEnabled());
+        ref.setRemark(hotline.getRemark());
+        return ref;
     }
 
     private String normalizeHotline(String hotline) {

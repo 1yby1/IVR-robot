@@ -8,6 +8,10 @@ public class HotlineListItem {
     private String flowCode;
     private String flowName;
     private Integer flowVersion;
+    private Integer flowStatus;
+    private Integer flowCurrentVersion;
+    private String healthStatus;
+    private String healthMessage;
     private Integer enabled;
     private String remark;
     private String createdAt;
@@ -25,6 +29,14 @@ public class HotlineListItem {
     public void setFlowName(String flowName) { this.flowName = flowName; }
     public Integer getFlowVersion() { return flowVersion; }
     public void setFlowVersion(Integer flowVersion) { this.flowVersion = flowVersion; }
+    public Integer getFlowStatus() { return flowStatus; }
+    public void setFlowStatus(Integer flowStatus) { this.flowStatus = flowStatus; }
+    public Integer getFlowCurrentVersion() { return flowCurrentVersion; }
+    public void setFlowCurrentVersion(Integer flowCurrentVersion) { this.flowCurrentVersion = flowCurrentVersion; }
+    public String getHealthStatus() { return healthStatus; }
+    public void setHealthStatus(String healthStatus) { this.healthStatus = healthStatus; }
+    public String getHealthMessage() { return healthMessage; }
+    public void setHealthMessage(String healthMessage) { this.healthMessage = healthMessage; }
     public Integer getEnabled() { return enabled; }
     public void setEnabled(Integer enabled) { this.enabled = enabled; }
     public String getRemark() { return remark; }
