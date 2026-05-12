@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ivr.ai.rag.entity.KbChunk;
 import com.ivr.ai.rag.mapper.KbChunkMapper;
 import com.ivr.ai.rag.mapper.KbDocMapper;
+import com.ivr.ai.rag.vector.VectorHit;
+import com.ivr.ai.rag.vector.VectorStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -17,6 +19,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class DatabaseKnowledgeService implements KnowledgeService {
@@ -29,15 +33,18 @@ public class DatabaseKnowledgeService implements KnowledgeService {
     private final KbDocMapper docMapper;
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
     private final ObjectMapper objectMapper;
+    private final VectorStore vectorStore;
 
     public DatabaseKnowledgeService(KbChunkMapper chunkMapper,
                                     KbDocMapper docMapper,
                                     ObjectProvider<EmbeddingModel> embeddingModelProvider,
-                                    ObjectMapper objectMapper) {
+                                    ObjectMapper objectMapper,
+                                    VectorStore vectorStore) {
         this.chunkMapper = chunkMapper;
         this.docMapper = docMapper;
         this.embeddingModelProvider = embeddingModelProvider;
         this.objectMapper = objectMapper;
+        this.vectorStore = vectorStore;
     }
 
     @Override
@@ -46,13 +53,17 @@ public class DatabaseKnowledgeService implements KnowledgeService {
         if (!StringUtils.hasText(question)) {
             return List.of();
         }
+        List<String> keywords = KnowledgeTextUtils.tokenize(question);
+        float[] queryVector = embedQuestion(question);
+        List<KnowledgeChunk> vectorHits = retrieveFromVectorStore(kbId, queryVector, limit);
+        if (!vectorHits.isEmpty()) {
+            return vectorHits;
+        }
+
         List<KbChunk> chunks = loadChunks(kbId);
         if (chunks.isEmpty()) {
             return List.of();
         }
-
-        List<String> keywords = KnowledgeTextUtils.tokenize(question);
-        float[] queryVector = embedQuestion(question);
         List<ScoredChunk> scored = new ArrayList<>();
         for (KbChunk chunk : chunks) {
             double score = scoreChunk(chunk, keywords, queryVector);
@@ -81,6 +92,34 @@ public class DatabaseKnowledgeService implements KnowledgeService {
             wrapper.eq(KbChunk::getKbId, kbId);
         }
         return chunkMapper.selectList(wrapper);
+    }
+
+    private List<KnowledgeChunk> retrieveFromVectorStore(Long kbId, float[] queryVector, int limit) {
+        if (!vectorStore.available() || queryVector == null) {
+            return List.of();
+        }
+        List<VectorHit> hits = vectorStore.search(kbId, queryVector, limit);
+        if (hits.isEmpty()) {
+            return List.of();
+        }
+        List<Long> chunkIds = hits.stream().map(VectorHit::chunkId).distinct().toList();
+        Map<Long, KbChunk> chunks = chunkMapper.selectBatchIds(chunkIds).stream()
+                .collect(Collectors.toMap(KbChunk::getId, Function.identity()));
+        Map<Long, String> titles = docTitles(hits.stream().map(VectorHit::docId).distinct().toList());
+        return hits.stream()
+                .map(hit -> {
+                    KbChunk chunk = chunks.get(hit.chunkId());
+                    if (chunk == null) {
+                        return null;
+                    }
+                    return new KnowledgeChunk(
+                            String.valueOf(chunk.getDocId()),
+                            titles.getOrDefault(chunk.getDocId(), "知识片段"),
+                            chunk.getContent(),
+                            hit.score());
+                })
+                .filter(item -> item != null)
+                .toList();
     }
 
     private float[] embedQuestion(String question) {

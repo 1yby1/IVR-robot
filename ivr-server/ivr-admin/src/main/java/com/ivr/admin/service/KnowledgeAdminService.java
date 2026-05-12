@@ -3,7 +3,6 @@ package com.ivr.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.toolkit.Db;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ivr.admin.dto.KnowledgeBaseRequest;
 import com.ivr.admin.dto.KnowledgeChunkPreviewResponse;
@@ -20,6 +19,7 @@ import com.ivr.ai.rag.entity.KbDocStatus;
 import com.ivr.ai.rag.mapper.KbBaseMapper;
 import com.ivr.ai.rag.mapper.KbChunkMapper;
 import com.ivr.ai.rag.mapper.KbDocMapper;
+import com.ivr.ai.rag.vector.VectorStore;
 import com.ivr.common.exception.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +72,7 @@ public class KnowledgeAdminService {
     private final ObjectMapper objectMapper;
     private final KnowledgeService knowledgeService;
     private final LlmService llmService;
+    private final VectorStore vectorStore;
 
     public KnowledgeAdminService(KbBaseMapper baseMapper,
                                  KbDocMapper docMapper,
@@ -79,7 +80,8 @@ public class KnowledgeAdminService {
                                  ObjectProvider<EmbeddingModel> embeddingModelProvider,
                                  ObjectMapper objectMapper,
                                  KnowledgeService knowledgeService,
-                                 LlmService llmService) {
+                                 LlmService llmService,
+                                 VectorStore vectorStore) {
         this.baseMapper = baseMapper;
         this.docMapper = docMapper;
         this.chunkMapper = chunkMapper;
@@ -87,6 +89,7 @@ public class KnowledgeAdminService {
         this.objectMapper = objectMapper;
         this.knowledgeService = knowledgeService;
         this.llmService = llmService;
+        this.vectorStore = vectorStore;
     }
 
     public Map<String, Object> pageBases(int current, int size, String keyword) {
@@ -329,6 +332,7 @@ public class KnowledgeAdminService {
     @Transactional(rollbackFor = Exception.class)
     public void deleteDoc(Long id) {
         requiredDoc(id);
+        vectorStore.deleteByDocId(id);
         chunkMapper.delete(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, id));
         docMapper.deleteById(id);
     }
@@ -343,6 +347,7 @@ public class KnowledgeAdminService {
      * （关键词检索仍可用），用户可手动"重建索引"再试一次。
      */
     private void rebuildChunks(KbDoc doc) {
+        vectorStore.deleteByDocId(doc.getId());
         chunkMapper.delete(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, doc.getId()));
         List<String> parts = splitContent(doc.getContent());
         if (parts.isEmpty()) {
@@ -353,7 +358,6 @@ public class KnowledgeAdminService {
 
         EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
         int embeddingFailures = 0;
-        List<KbChunk> chunks = new ArrayList<>(parts.size());
         for (int i = 0; i < parts.size(); i++) {
             String content = parts.get(i);
             KbChunk chunk = new KbChunk();
@@ -363,17 +367,21 @@ public class KnowledgeAdminService {
             chunk.setContent(content);
             chunk.setTokenCnt(estimateTokenCount(content));
             chunk.setCreatedAt(LocalDateTime.now());
+            float[] embedding = null;
             if (embeddingModel != null) {
                 try {
-                    chunk.setEmbedding(toJson(embeddingModel.embed(content)));
+                    embedding = embeddingModel.embed(content);
+                    chunk.setEmbedding(toJson(embedding));
                 } catch (Exception e) {
                     embeddingFailures++;
                     log.warn("embedding failed doc={} chunk={} err={}", doc.getId(), i, e.toString());
                 }
             }
-            chunks.add(chunk);
+            chunkMapper.insert(chunk);
+            if (embedding != null) {
+                vectorStore.upsert(chunk.getId(), chunk.getKbId(), chunk.getDocId(), embedding);
+            }
         }
-        Db.saveBatch(chunks);
 
         doc.setStatus(KbDocStatus.INDEXED.code());
         docMapper.updateById(doc);

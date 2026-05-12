@@ -40,15 +40,15 @@ spring:
   # Spring AI - 通义千问（OpenAI 兼容模式）
   ai:
     openai:
-      api-key: ${DASHSCOPE_API_KEY:sk-placeholder}
+      api-key: ${LLM_API_KEY:sk-placeholder}
       base-url: ${LLM_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
       chat:
         options:
-          model: ${LLM_MODEL:qwen-plus}
+          model: ${LLM_MODEL:qwen-max}
           temperature: 0.3
       embedding:
         options:
-          model: ${EMBED_MODEL:gte-rerank-v2}
+          model: ${EMBED_MODEL:text-embedding-v4}
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
@@ -75,6 +75,15 @@ ivr:
     esl-host: ${FS_HOST:localhost}
     esl-port: ${FS_PORT:8021}
     esl-password: ${FS_PASSWORD:ClueCon}
+  rag:
+    pgvector:
+      enabled: ${PGVECTOR_ENABLED:false}
+      jdbc-url: ${PGVECTOR_JDBC_URL:jdbc:postgresql://${PGVECTOR_HOST:localhost}:${PGVECTOR_PORT:5432}/${PGVECTOR_DATABASE:ivr_vector}}
+      username: ${PGVECTOR_USER:ivr}
+      password: ${PGVECTOR_PASSWORD:ivr123}
+      table-name: ${PGVECTOR_TABLE:kb_chunk_vector}
+      min-score: ${PGVECTOR_MIN_SCORE:0.0}
+      ef-search: ${PGVECTOR_EF_SEARCH:100}
 
 logging:
   level:

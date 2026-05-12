@@ -20,11 +20,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -33,7 +35,10 @@ import java.util.regex.Pattern;
 public class RagEvalService {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final Pattern KEYWORD_SPLITTER = Pattern.compile("[,，\\n]");
+    private static final Pattern KEYWORD_SPLITTER = Pattern.compile("[,，、;；\\n]+");
+    private static final Pattern QUOTE_CHARS = Pattern.compile("[\"'“”‘’]");
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private static final Pattern NUMERIC_RANGE_CONNECTOR = Pattern.compile("(\\d+)(?:到|至|~|～|—|–|－)(\\d+)");
     private static final String DEFAULT_RAG_TEMPLATE = """
             你是客服助手，必须严格依据下方资料回答客户问题。资料中没有答案时直接回答「抱歉，这个问题需要人工帮您处理，正在为您转接」。
             资料：
@@ -41,6 +46,20 @@ public class RagEvalService {
 
             客户问题：{question}
             请用 80 字以内、口语化的中文回答，不要重复「资料」二字。
+            """;
+    private static final String SEMANTIC_KEYWORD_TEMPLATE = """
+            你是 RAG 自动评估助手。请判断“模型回答”是否已经覆盖了“期望关键词”的语义。
+
+            判定规则：
+            1. 不要求逐字包含，只要语义一致即可，例如“15天”和“十五天”、“1-7个工作日”和“1到7个工作日”视为一致。
+            2. 所有期望关键词的含义都被覆盖时才回答 YES。
+            3. 只输出 YES 或 NO，不要输出解释。
+
+            期望关键词：
+            {keywords}
+
+            模型回答：
+            {answer}
             """;
 
     private final RagEvalCaseMapper caseMapper;
@@ -217,7 +236,7 @@ public class RagEvalService {
         boolean shouldFallback = Objects.equals(item.getShouldFallback(), 1);
         boolean fallbackPassed = shouldFallback ? chunks.isEmpty() : !chunks.isEmpty();
         boolean hitDoc = shouldFallback || hitExpectedDoc(chunks, item.getExpectedDocTitle());
-        boolean keywordPassed = shouldFallback || keywordsPassed(answer, item.getExpectedKeywords(), generateAnswer);
+        boolean keywordPassed = shouldFallback || !generateAnswer || keywordsPassed(answer, item.getExpectedKeywords(), generateAnswer);
         boolean passed = fallbackPassed && hitDoc && keywordPassed && !StringUtils.hasText(result.getFailReason());
 
         result.setRetrievedChunks(toJson(chunks));
@@ -248,8 +267,15 @@ public class RagEvalService {
         if (!generateAnswer || !StringUtils.hasText(answer)) {
             return false;
         }
-        String lowerAnswer = answer.toLowerCase();
-        return keywords.stream().allMatch(keyword -> lowerAnswer.contains(keyword.toLowerCase()));
+        String normalizedAnswer = normalizeKeywordText(answer);
+        List<String> missedKeywords = new ArrayList<>();
+        for (String keyword : keywords) {
+            String normalizedKeyword = normalizeKeywordText(keyword);
+            if (!StringUtils.hasText(normalizedKeyword) || !normalizedAnswer.contains(normalizedKeyword)) {
+                missedKeywords.add(keyword);
+            }
+        }
+        return missedKeywords.isEmpty() || semanticKeywordsPassed(answer, missedKeywords);
     }
 
     private String failReason(boolean shouldFallback, boolean fallbackPassed, boolean hitDoc, boolean keywordPassed) {
@@ -403,12 +429,37 @@ public class RagEvalService {
         }
         List<String> keywords = new ArrayList<>();
         for (String part : KEYWORD_SPLITTER.split(value)) {
-            String text = part.trim();
+            String text = QUOTE_CHARS.matcher(part.trim()).replaceAll("");
             if (StringUtils.hasText(text)) {
                 keywords.add(text);
             }
         }
         return keywords;
+    }
+
+    private boolean semanticKeywordsPassed(String answer, List<String> missedKeywords) {
+        if (missedKeywords.isEmpty()) {
+            return true;
+        }
+        try {
+            String result = llmService.chatTemplate(SEMANTIC_KEYWORD_TEMPLATE, Map.of(
+                    "keywords", missedKeywords.stream().map(keyword -> "- " + keyword).reduce((a, b) -> a + "\n" + b).orElse(""),
+                    "answer", answer
+            ));
+            String normalized = normalizeKeywordText(result);
+            return normalized.startsWith("yes") || normalized.startsWith("是");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String normalizeKeywordText(String value) {
+        String text = Normalizer.normalize(Objects.toString(value, ""), Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT);
+        text = QUOTE_CHARS.matcher(text).replaceAll("");
+        text = WHITESPACE.matcher(text).replaceAll("");
+        text = NUMERIC_RANGE_CONNECTOR.matcher(text).replaceAll("$1-$2");
+        return text;
     }
 
     private String defaultText(String value, String fallback) {
