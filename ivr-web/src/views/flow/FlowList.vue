@@ -117,7 +117,45 @@
             </div>
           </div>
 
-          <el-tabs model-value="issues">
+          <el-tabs model-value="diagnoses">
+            <el-tab-pane label="智能诊断" name="diagnoses">
+              <div class="diagnosis-list">
+                <div
+                  v-for="item in healthDialog.response.diagnoses"
+                  :key="`${item.rootCause}-${item.relatedNodeId || 'flow'}-${item.title}`"
+                  class="diagnosis-card"
+                  :class="`is-${item.level}`"
+                >
+                  <div class="diagnosis-card-head">
+                    <div>
+                      <el-tag :type="priorityTagType(item.priority)" effect="plain" size="small">
+                        {{ item.priority }}
+                      </el-tag>
+                      <el-tag :type="diagnosisTagType(item.level)" effect="plain" size="small">
+                        {{ diagnosisLevelLabel(item.level) }}
+                      </el-tag>
+                    </div>
+                    <span class="num">置信度 {{ rateText(item.confidence) }}</span>
+                  </div>
+                  <div class="diagnosis-title">{{ item.title }}</div>
+                  <div class="diagnosis-meta">
+                    <span v-if="item.relatedNodeName">节点：{{ item.relatedNodeName }}</span>
+                    <span>根因：{{ reasonLabel(item.rootCause) }}</span>
+                  </div>
+                  <p>{{ item.evidence }}</p>
+                  <p class="diagnosis-action">{{ item.action }}</p>
+                  <div v-if="item.relatedCallUuids?.length" class="diagnosis-samples">
+                    <code
+                      v-for="callUuid in item.relatedCallUuids"
+                      :key="callUuid"
+                      class="code-chip"
+                    >
+                      {{ callUuid }}
+                    </code>
+                  </div>
+                </div>
+              </div>
+            </el-tab-pane>
             <el-tab-pane label="问题清单" name="issues">
               <el-table
                 :data="healthDialog.response.issues"
@@ -160,6 +198,22 @@
                 <el-table-column prop="fallbackCount" label="Fallback" width="90" />
                 <el-table-column prop="errorCount" label="失败" width="80" />
                 <el-table-column prop="aiHitCount" label="AI 命中" width="90" />
+                <el-table-column label="原因分布" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <div class="reason-tags">
+                      <el-tag
+                        v-for="item in reasonCounts(row.statusCounts)"
+                        :key="item.key"
+                        effect="plain"
+                        size="small"
+                        :type="reasonTagType(item.key)"
+                      >
+                        {{ reasonLabel(item.key) }} {{ item.count }}
+                      </el-tag>
+                      <span v-if="reasonCounts(row.statusCounts).length === 0" class="num">-</span>
+                    </div>
+                  </template>
+                </el-table-column>
                 <el-table-column label="成功率" width="90">
                   <template #default="{ row }">{{ rateText(row.successRate) }}</template>
                 </el-table-column>
@@ -168,6 +222,37 @@
                     <el-tag :type="nodeTagType(row.healthLevel)" effect="plain" size="small">
                       {{ nodeLevelLabel(row.healthLevel) }}
                     </el-tag>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="路径风险" name="paths">
+              <el-table
+                :data="healthDialog.response.paths"
+                border
+                stripe
+                max-height="320"
+                empty-text="暂无路径样本"
+              >
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }">
+                    <el-tag :type="pathTagType(row.level)" effect="plain" size="small">
+                      {{ pathLevelLabel(row.level) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="pathText" label="路径" min-width="280" show-overflow-tooltip />
+                <el-table-column prop="count" label="次数" width="80" />
+                <el-table-column label="异常" width="90">
+                  <template #default="{ row }">{{ row.badCount }} / {{ rateText(row.badRate) }}</template>
+                </el-table-column>
+                <el-table-column label="主要结果" width="110">
+                  <template #default="{ row }">{{ endReasonLabel(row.mainEndReason) }}</template>
+                </el-table-column>
+                <el-table-column label="样本" min-width="150" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <code v-if="row.sampleCallUuid" class="code-chip">{{ row.sampleCallUuid }}</code>
+                    <span v-else class="num">-</span>
                   </template>
                 </el-table-column>
               </el-table>
@@ -333,14 +418,33 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="previewDialog.visible" :title="previewDialog.title" width="780px">
-      <pre class="version-preview">{{ formattedPreviewJson }}</pre>
+    <el-dialog
+      v-model="previewDialog.visible"
+      :title="previewDialog.title"
+      width="960px"
+      top="6vh"
+      @opened="renderPreviewGraph"
+      @closed="cleanupPreviewGraph"
+    >
+      <div class="version-graph-head">
+        <span class="num">{{ previewGraphStats }}</span>
+        <el-button size="small" :loading="previewDialog.loading" @click="fitPreviewGraph">适配画布</el-button>
+      </div>
+      <el-alert
+        v-if="previewDialog.error"
+        class="version-graph-error"
+        :title="previewDialog.error"
+        type="warning"
+        show-icon
+        :closable="false"
+      />
+      <div ref="versionPreviewCanvasRef" class="version-graph-preview"></div>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, h, reactive, ref, onMounted } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from 'lucide-vue-next'
@@ -397,8 +501,12 @@ const versionDialog = reactive({
 const previewDialog = reactive({
   visible: false,
   title: '',
-  graphJson: ''
+  graphJson: '',
+  loading: false,
+  error: ''
 })
+const versionPreviewCanvasRef = ref<HTMLDivElement>()
+let previewLf: any = null
 
 const statusLabel = computed(() => {
   const status = debugDialog.response?.status
@@ -433,11 +541,14 @@ const debugVariables = computed(() => {
     }))
 })
 
-const formattedPreviewJson = computed(() => {
+const previewGraphStats = computed(() => {
   try {
-    return JSON.stringify(JSON.parse(previewDialog.graphJson || '{}'), null, 2)
+    const graph = JSON.parse(previewDialog.graphJson || '{}')
+    const nodeCount = Array.isArray(graph.nodes) ? graph.nodes.length : 0
+    const edgeCount = Array.isArray(graph.edges) ? graph.edges.length : 0
+    return `${nodeCount} 节点 / ${edgeCount} 线`
   } catch {
-    return previewDialog.graphJson
+    return '图结构异常'
   }
 })
 
@@ -510,7 +621,181 @@ async function fetchVersions() {
 function previewVersion(row: FlowVersionItem) {
   previewDialog.title = `版本预览 - ${row.versionLabel}`
   previewDialog.graphJson = row.graphJson || ''
+  previewDialog.error = ''
   previewDialog.visible = true
+}
+
+async function renderPreviewGraph() {
+  if (!previewDialog.visible || !versionPreviewCanvasRef.value) return
+  previewDialog.loading = true
+  previewDialog.error = ''
+  try {
+    const graph = parsePreviewGraph(previewDialog.graphJson)
+    cleanupPreviewGraph()
+    const { default: LogicFlow } = await import('@logicflow/core')
+    await import('@logicflow/core/lib/style/index.css')
+    previewLf = new LogicFlow({
+      container: versionPreviewCanvasRef.value,
+      grid: { size: 12, visible: true, type: 'dot', config: { color: '#e5e7eb' } },
+      background: { color: '#ffffff' },
+      keyboard: { enabled: false },
+      isSilentMode: true,
+      style: {
+        rect: {
+          rx: 6,
+          ry: 6,
+          stroke: '#d1d5db',
+          strokeWidth: 1,
+          fill: '#ffffff'
+        },
+        circle: {
+          stroke: '#0f172a',
+          strokeWidth: 1,
+          fill: '#ffffff'
+        },
+        nodeText: {
+          color: '#111827',
+          fontSize: 12
+        },
+        polyline: {
+          stroke: '#9ca3af',
+          strokeWidth: 1.5
+        },
+        bezier: {
+          stroke: '#9ca3af',
+          strokeWidth: 1.5
+        }
+      }
+    })
+    previewLf.render(graph)
+    await nextTick()
+    fitPreviewGraph()
+  } catch (error) {
+    previewDialog.error = error instanceof Error ? error.message : '图结构预览失败'
+  } finally {
+    previewDialog.loading = false
+  }
+}
+
+function fitPreviewGraph() {
+  if (!previewLf) return
+  previewLf.fitView?.()
+  previewLf.translateCenter?.()
+}
+
+function cleanupPreviewGraph() {
+  previewLf?.destroy?.()
+  previewLf = null
+  if (versionPreviewCanvasRef.value) {
+    versionPreviewCanvasRef.value.innerHTML = ''
+  }
+}
+
+function parsePreviewGraph(graphJson: string) {
+  if (!graphJson) return emptyGraph()
+  try {
+    return normalizePreviewGraph(JSON.parse(graphJson))
+  } catch {
+    throw new Error('该版本的图结构不是合法 JSON，无法渲染为流程图')
+  }
+}
+
+function normalizePreviewGraph(graph: any) {
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
+  const edges = Array.isArray(graph?.edges) ? graph.edges : []
+  return {
+    ...graph,
+    nodes: nodes.map(normalizePreviewNode),
+    edges: edges.map(normalizePreviewEdge)
+  }
+}
+
+function normalizePreviewNode(node: any) {
+  const rawType = String(node?.type || '')
+  const properties = node?.properties || {}
+  const bizType = String(properties.bizType || legacyBizType(rawType) || rawType || '')
+  const name = properties.name || textValue(node?.text) || nodeTypeLabel(bizType) || node?.id
+  return {
+    ...node,
+    type: previewNodeShape(rawType, bizType),
+    text: name,
+    properties: {
+      ...properties,
+      bizType,
+      name
+    },
+    style: {
+      ...(node?.style || {}),
+      ...previewNodeStyle(bizType)
+    }
+  }
+}
+
+function normalizePreviewEdge(edge: any) {
+  const rawType = String(edge?.type || '')
+  const properties = edge?.properties || {}
+  const text = String(properties.key || properties.label || textValue(edge?.text) || '')
+  return {
+    ...edge,
+    type: ['line', 'polyline', 'bezier'].includes(rawType) ? rawType : 'polyline',
+    text,
+    properties: {
+      ...properties,
+      ...(text ? { key: text } : {})
+    }
+  }
+}
+
+function previewNodeShape(rawType: string, bizType: string) {
+  if (['rect', 'circle', 'ellipse', 'diamond'].includes(rawType)) return rawType
+  return ['start', 'end'].includes(bizType) ? 'circle' : 'rect'
+}
+
+function legacyBizType(rawType: string) {
+  const legacyTypes = ['start', 'end', 'play', 'dtmf', 'condition', 'var_assign', 'http', 'transfer', 'voicemail', 'asr', 'intent', 'rag']
+  return legacyTypes.includes(rawType) ? rawType : ''
+}
+
+function previewNodeStyle(bizType: string) {
+  const styles: Record<string, Record<string, string | number>> = {
+    start: { stroke: '#16a34a', fill: '#f0fdf4', strokeWidth: 1.5 },
+    end: { stroke: '#475569', fill: '#f8fafc', strokeWidth: 1.5 },
+    transfer: { stroke: '#ea580c', fill: '#fff7ed', strokeWidth: 1.5 },
+    voicemail: { stroke: '#ea580c', fill: '#fff7ed', strokeWidth: 1.5 },
+    rag: { stroke: '#7c3aed', fill: '#f5f3ff', strokeWidth: 1.5 },
+    asr: { stroke: '#2563eb', fill: '#eff6ff', strokeWidth: 1.5 },
+    intent: { stroke: '#2563eb', fill: '#eff6ff', strokeWidth: 1.5 },
+    http: { stroke: '#0891b2', fill: '#ecfeff', strokeWidth: 1.5 }
+  }
+  return styles[bizType] || {}
+}
+
+function nodeTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    start: '开始',
+    play: '播放',
+    dtmf: '按键',
+    condition: '条件',
+    var_assign: '变量',
+    http: '接口',
+    transfer: '转人工',
+    voicemail: '留言',
+    asr: '语音识别',
+    intent: '意图识别',
+    rag: 'AI 问答',
+    end: '结束'
+  }
+  return labels[type] || '节点'
+}
+
+function textValue(text: any) {
+  if (!text) return ''
+  if (typeof text === 'string') return text
+  return String(text.value || text.text || '')
+}
+
+function emptyGraph() {
+  return { nodes: [], edges: [] }
 }
 async function restoreVersion(row: FlowVersionItem) {
   if (!versionDialog.flow) return
@@ -608,6 +893,96 @@ function nodeLevelLabel(level: string) {
   return '无样本'
 }
 
+function priorityTagType(priority: string) {
+  if (priority === 'P0') return 'danger'
+  if (priority === 'P1') return 'warning'
+  return 'info'
+}
+
+function diagnosisTagType(level: string) {
+  if (level === 'error') return 'danger'
+  if (level === 'warning') return 'warning'
+  if (level === 'success') return 'success'
+  return 'info'
+}
+
+function diagnosisLevelLabel(level: string) {
+  if (level === 'error') return '严重'
+  if (level === 'warning') return '风险'
+  if (level === 'success') return '正常'
+  return '提示'
+}
+
+function pathTagType(level: string) {
+  if (level === 'danger') return 'danger'
+  if (level === 'warning') return 'warning'
+  if (level === 'success') return 'success'
+  return 'info'
+}
+
+function pathLevelLabel(level: string) {
+  if (level === 'danger') return '高危'
+  if (level === 'warning') return '关注'
+  if (level === 'success') return '正常'
+  return '未知'
+}
+
+function reasonCounts(counts?: Record<string, number>) {
+  return Object.entries(counts || {})
+    .filter(([, count]) => count > 0)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 4)
+    .map(([key, count]) => ({ key, count }))
+}
+
+function reasonTagType(key: string) {
+  if (['llm_failed', 'retrieve_failed', 'non_2xx', 'failed', 'error'].includes(key)) return 'danger'
+  if (['no_hits', 'skipped', 'fallback_hit'].includes(key)) return 'warning'
+  if (['ok', 'intent_hit'].includes(key)) return 'success'
+  return 'info'
+}
+
+function reasonLabel(key: string) {
+  const labels: Record<string, string> = {
+    invalid_graph_or_required_config_missing: '流程结构或必填配置异常',
+    no_runtime_samples: '暂无运行样本',
+    rag_llm_failed: 'RAG 生成失败',
+    rag_retrieve_failed: 'RAG 检索失败',
+    rag_no_hits: 'RAG 未命中',
+    rag_empty_question: '问题变量为空',
+    http_failed: 'HTTP 调用失败',
+    intent_fallback: '意图兜底',
+    node_error_rate_high: '节点失败率高',
+    node_fallback_rate_high: '节点兜底率高',
+    bad_path_cluster: '高风险路径聚集',
+    healthy_baseline: '基线正常',
+    llm_failed: '生成失败',
+    retrieve_failed: '检索失败',
+    no_hits: '未命中',
+    skipped: '跳过',
+    non_2xx: '非 2xx',
+    failed: '失败',
+    error: '错误',
+    ok: '成功',
+    fallback_hit: '兜底命中',
+    intent_hit: '意图命中'
+  }
+  return labels[key] || key || '-'
+}
+
+function endReasonLabel(reason: string) {
+  const labels: Record<string, string> = {
+    normal: '正常结束',
+    transfer: '转人工',
+    timeout: '超时',
+    error: '错误',
+    rejected: '拒绝',
+    running: '运行中',
+    unknown: '未知'
+  }
+  return labels[reason] || reason || '-'
+}
+
 function rateText(value?: number) {
   if (value === undefined || value === null) return '-'
   return `${Math.round(value * 100)}%`
@@ -666,6 +1041,7 @@ function renderImpactMessage(lines: string[]) {
 }
 
 onMounted(fetchList)
+onBeforeUnmount(cleanupPreviewGraph)
 </script>
 
 <style scoped lang="scss">
@@ -752,20 +1128,22 @@ onMounted(fetchList)
 .version-diff-hint {
   color: var(--color-warning);
 }
-.version-preview {
-  max-height: 520px;
-  overflow: auto;
-  margin: 0;
-  padding: var(--space-3);
+.version-graph-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.version-graph-error {
+  margin-bottom: var(--space-2);
+}
+.version-graph-preview {
+  height: 560px;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-neutral-50);
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
+  background: var(--color-bg);
 }
 .health-dialog {
   min-height: 220px;
@@ -839,6 +1217,75 @@ onMounted(fetchList)
     font-weight: var(--weight-semibold);
     color: var(--color-text);
   }
+}
+.diagnosis-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.diagnosis-card {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  &.is-error {
+    border-left-color: var(--color-error);
+  }
+  &.is-warning {
+    border-left-color: var(--color-warning);
+  }
+  &.is-success {
+    border-left-color: var(--color-success);
+  }
+  &.is-info {
+    border-left-color: var(--color-primary);
+  }
+  p {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: var(--color-text-muted);
+  }
+}
+.diagnosis-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  > div {
+    display: flex;
+    gap: var(--space-1);
+  }
+}
+.diagnosis-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+}
+.diagnosis-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+.diagnosis-action {
+  color: var(--color-text) !important;
+}
+.diagnosis-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.reason-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .debug-title {
   font-size: var(--text-sm);

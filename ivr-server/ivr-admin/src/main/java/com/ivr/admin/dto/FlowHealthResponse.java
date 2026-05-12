@@ -1,7 +1,9 @@
 package com.ivr.admin.dto;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class FlowHealthResponse {
 
@@ -12,7 +14,9 @@ public class FlowHealthResponse {
     private String summary;
     private RuntimeStats runtimeStats = new RuntimeStats();
     private List<Issue> issues = new ArrayList<>();
+    private List<Diagnosis> diagnoses = new ArrayList<>();
     private List<NodeStat> nodes = new ArrayList<>();
+    private List<PathStat> paths = new ArrayList<>();
 
     public Long getFlowId() { return flowId; }
     public void setFlowId(Long flowId) { this.flowId = flowId; }
@@ -28,8 +32,12 @@ public class FlowHealthResponse {
     public void setRuntimeStats(RuntimeStats runtimeStats) { this.runtimeStats = runtimeStats; }
     public List<Issue> getIssues() { return issues; }
     public void setIssues(List<Issue> issues) { this.issues = issues; }
+    public List<Diagnosis> getDiagnoses() { return diagnoses; }
+    public void setDiagnoses(List<Diagnosis> diagnoses) { this.diagnoses = diagnoses; }
     public List<NodeStat> getNodes() { return nodes; }
     public void setNodes(List<NodeStat> nodes) { this.nodes = nodes; }
+    public List<PathStat> getPaths() { return paths; }
+    public void setPaths(List<PathStat> paths) { this.paths = paths; }
 
     public static class RuntimeStats {
         private Integer sampleCalls = 0;
@@ -78,6 +86,40 @@ public class FlowHealthResponse {
         public void setSuggestion(String suggestion) { this.suggestion = suggestion; }
     }
 
+    public static class Diagnosis {
+        private String priority;
+        private String level;
+        private String title;
+        private String rootCause;
+        private String evidence;
+        private String action;
+        private Double confidence;
+        private String relatedNodeId;
+        private String relatedNodeName;
+        private List<String> relatedCallUuids = new ArrayList<>();
+
+        public String getPriority() { return priority; }
+        public void setPriority(String priority) { this.priority = priority; }
+        public String getLevel() { return level; }
+        public void setLevel(String level) { this.level = level; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public String getRootCause() { return rootCause; }
+        public void setRootCause(String rootCause) { this.rootCause = rootCause; }
+        public String getEvidence() { return evidence; }
+        public void setEvidence(String evidence) { this.evidence = evidence; }
+        public String getAction() { return action; }
+        public void setAction(String action) { this.action = action; }
+        public Double getConfidence() { return confidence; }
+        public void setConfidence(Double confidence) { this.confidence = confidence; }
+        public String getRelatedNodeId() { return relatedNodeId; }
+        public void setRelatedNodeId(String relatedNodeId) { this.relatedNodeId = relatedNodeId; }
+        public String getRelatedNodeName() { return relatedNodeName; }
+        public void setRelatedNodeName(String relatedNodeName) { this.relatedNodeName = relatedNodeName; }
+        public List<String> getRelatedCallUuids() { return relatedCallUuids; }
+        public void setRelatedCallUuids(List<String> relatedCallUuids) { this.relatedCallUuids = relatedCallUuids; }
+    }
+
     public static class NodeStat {
         private String nodeId;
         private String nodeName;
@@ -91,6 +133,8 @@ public class FlowHealthResponse {
         private Integer transferCount = 0;
         private Double successRate;
         private String healthLevel = "info";
+        private Map<String, Integer> statusCounts = new LinkedHashMap<>();
+        private List<String> sampleCallUuids = new ArrayList<>();
 
         public String getNodeId() { return nodeId; }
         public void setNodeId(String nodeId) { this.nodeId = nodeId; }
@@ -116,5 +160,37 @@ public class FlowHealthResponse {
         public void setSuccessRate(Double successRate) { this.successRate = successRate; }
         public String getHealthLevel() { return healthLevel; }
         public void setHealthLevel(String healthLevel) { this.healthLevel = healthLevel; }
+        public Map<String, Integer> getStatusCounts() { return statusCounts; }
+        public void setStatusCounts(Map<String, Integer> statusCounts) { this.statusCounts = statusCounts; }
+        public List<String> getSampleCallUuids() { return sampleCallUuids; }
+        public void setSampleCallUuids(List<String> sampleCallUuids) { this.sampleCallUuids = sampleCallUuids; }
+    }
+
+    public static class PathStat {
+        private String pathKey;
+        private String pathText;
+        private Integer count = 0;
+        private Integer badCount = 0;
+        private Double badRate = 0.0;
+        private String mainEndReason;
+        private String level = "info";
+        private String sampleCallUuid;
+
+        public String getPathKey() { return pathKey; }
+        public void setPathKey(String pathKey) { this.pathKey = pathKey; }
+        public String getPathText() { return pathText; }
+        public void setPathText(String pathText) { this.pathText = pathText; }
+        public Integer getCount() { return count; }
+        public void setCount(Integer count) { this.count = count; }
+        public Integer getBadCount() { return badCount; }
+        public void setBadCount(Integer badCount) { this.badCount = badCount; }
+        public Double getBadRate() { return badRate; }
+        public void setBadRate(Double badRate) { this.badRate = badRate; }
+        public String getMainEndReason() { return mainEndReason; }
+        public void setMainEndReason(String mainEndReason) { this.mainEndReason = mainEndReason; }
+        public String getLevel() { return level; }
+        public void setLevel(String level) { this.level = level; }
+        public String getSampleCallUuid() { return sampleCallUuid; }
+        public void setSampleCallUuid(String sampleCallUuid) { this.sampleCallUuid = sampleCallUuid; }
     }
 }

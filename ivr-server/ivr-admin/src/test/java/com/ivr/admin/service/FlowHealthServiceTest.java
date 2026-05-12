@@ -87,8 +87,11 @@ class FlowHealthServiceTest {
         assertThat(rag.getAiHitCount()).isEqualTo(1);
         assertThat(rag.getFallbackCount()).isEqualTo(1);
         assertThat(rag.getSuccessRate()).isEqualTo(0.5);
+        assertThat(rag.getStatusCounts()).containsEntry("ok", 1).containsEntry("no_hits", 1);
         assertThat(transfer.getTransferCount()).isEqualTo(1);
         assertThat(response.getIssues()).anyMatch(issue -> issue.getMessage().contains("通话样本较少"));
+        assertThat(response.getDiagnoses()).anyMatch(item -> "rag_no_hits".equals(item.getRootCause()));
+        assertThat(response.getPaths()).anyMatch(path -> path.getPathText().contains("知识库问答"));
     }
 
     private CallLog callLog(String callUuid, String endReason, int duration) {

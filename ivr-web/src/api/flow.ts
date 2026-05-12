@@ -57,6 +57,19 @@ export interface FlowHealthIssue {
   suggestion: string
 }
 
+export interface FlowHealthDiagnosis {
+  priority: 'P0' | 'P1' | 'P2'
+  level: 'error' | 'warning' | 'info' | 'success'
+  title: string
+  rootCause: string
+  evidence: string
+  action: string
+  confidence: number
+  relatedNodeId?: string
+  relatedNodeName?: string
+  relatedCallUuids: string[]
+}
+
 export interface FlowNodeHealthItem {
   nodeId: string
   nodeName: string
@@ -70,6 +83,19 @@ export interface FlowNodeHealthItem {
   transferCount: number
   successRate?: number
   healthLevel: 'success' | 'warning' | 'danger' | 'info'
+  statusCounts: Record<string, number>
+  sampleCallUuids: string[]
+}
+
+export interface FlowHealthPathStat {
+  pathKey: string
+  pathText: string
+  count: number
+  badCount: number
+  badRate: number
+  mainEndReason: string
+  level: 'success' | 'warning' | 'danger' | 'info'
+  sampleCallUuid?: string
 }
 
 export interface FlowHealthResponse {
@@ -80,7 +106,9 @@ export interface FlowHealthResponse {
   summary: string
   runtimeStats: FlowHealthRuntimeStats
   issues: FlowHealthIssue[]
+  diagnoses: FlowHealthDiagnosis[]
   nodes: FlowNodeHealthItem[]
+  paths: FlowHealthPathStat[]
 }
 
 export interface FlowDebugOption {
